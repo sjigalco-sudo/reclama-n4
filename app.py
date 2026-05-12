@@ -17,7 +17,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: Сборка Рекламы (ЭФИР + ID + ТАЙМИНГИ)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (ЭФИР + ID + ТАЙМИНГИ)")
 
 # --- Вспомогательные функции ---
 def format_time_hh_mm(x):
@@ -59,7 +59,9 @@ with st.sidebar:
 # --- Основная логика ---
 if uploaded_file:
     try:
+        # Извлекаем имя файла (дату) для именования выходных данных
         base_name = os.path.splitext(uploaded_file.name)[0]
+        
         df = pd.read_excel(uploaded_file, skiprows=6)
         
         # Колонки: Время(2), Название(6), Длит(7), ID(9)
@@ -80,7 +82,7 @@ if uploaded_file:
                 time_filename = format_time_hh_mm(block_time)
                 time_label = format_time_full(block_time)
                 
-                # 1. ГЕНЕРАЦИЯ SLBLOCK (БЕЗ ЗАСТАВОК)
+                # 1. ГЕНЕРАЦИЯ SLBLOCK
                 total_dur_pure = items['Dur'].sum()
                 xml_lines = [
                     f'<slblock Source="list" Type="accurate" Sec="{total_dur_pure:.3f}" Include_subfolders="no" Path="" cptn_start_file="" cptn_end_file="" cptn_between_file="" cptn_start_en="no" cptn_end_en="no" cptn_between_en="no">version 2'
@@ -97,13 +99,9 @@ if uploaded_file:
                 xml_lines.append('</slblock>')
                 zip_file.writestr(f"{time_filename}.slblock", "\r\n".join(xml_lines).encode('utf-16'))
 
-                # 2. СБОР ID (TXT + XLSX)
+                # 2. СБОР ID
                 id_list_str = "".join([f'"{str(row["ID"]).split(".")[0]}"' for _, row in items.iterrows()])
-                
-                # Пишем в TXT
                 txt_id_content.write(f"{time_label}\n{id_list_str}\n\n")
-                
-                # Собираем для XLSX
                 xlsx_id_data.append({"Время выхода": time_label, "Список ID": id_list_str})
                 
                 # 3. ТАЙМИНГИ (+20с)
@@ -113,18 +111,19 @@ if uploaded_file:
                     "Длительность (+20с)": seconds_to_hms(total_timing_plus_20)
                 })
 
-        st.success(f"✅ Все файлы для N4 сформированы!")
+        st.success(f"✅ Обработка файла '{base_name}' завершена!")
         
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🚀 Эфирные файлы")
-            st.download_button(f"Скачать SLBlocks ({base_name}.zip)", zip_slblock_buffer.getvalue(), f"N4_SLBLOCKS_{base_name}.zip")
+            st.download_button(f"📥 Скачать SLBlocks ({base_name}.zip)", zip_slblock_buffer.getvalue(), f"N4_SLBLOCKS_{base_name}.zip")
         
         with col2:
             st.subheader("📊 Отчеты")
-            st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
-            st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_Table_{base_name}.xlsx")
-            st.download_button("📥 Тайминги +20с (.xlsx)", to_excel(pd.DataFrame(xlsx_timing_data)), f"N4_Timings_{base_name}.xlsx")
+            # Теперь во всех именах файлов присутствует base_name (дата из исходного файла)
+            st.download_button(f"📥 Список ID (.txt) - {base_name}", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
+            st.download_button(f"📥 Список ID (.xlsx) - {base_name}", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_Table_{base_name}.xlsx")
+            st.download_button(f"📥 Тайминги (.xlsx) - {base_name}", to_excel(pd.DataFrame(xlsx_timing_data)), f"N4_Timings_{base_name}.xlsx")
 
     except Exception as e:
         st.error(f"Ошибка при обработке: {e}")
