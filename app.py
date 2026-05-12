@@ -17,7 +17,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (ЭФИР + ID + ТАЙМИНГИ)")
+st.title("📺 N4: Сборка Рекламы (ЭФИР + ID + ТАЙМИНГИ)")
 
 # --- Вспомогательные функции ---
 def format_time_hh_mm(x):
