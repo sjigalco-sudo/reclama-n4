@@ -1,15 +1,35 @@
 import streamlit as st
 import pandas as pd
-from datetime import timedelta, datetime, time
 import io
+import zipfile
 import os
+from datetime import timedelta, datetime, time
 
-st.set_page_config(page_title="N4 Multi-Format Generator", page_icon="📺")
-st.title("📺 Генератор для N4 (Все форматы)")
+# Конфигурация страницы
+st.set_page_config(page_title="N4 | Ultimate Multi-Generator", page_icon="📺", layout="wide")
 
-def format_time_str(x):
-    if isinstance(x, (datetime, time)):
-        return x.strftime('%H:%M:%S')
+# Кастомный стиль для N4 (Красные и синие акценты)
+st.markdown('''
+    <style>
+    .main { background-color: #f8fafc; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #E11D48; color: white; border: none; }
+    .stDownloadButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #2563EB; color: white; border: none; }
+    h1 { color: #E11D48; border-bottom: 2px solid #E11D48; padding-bottom: 10px; }
+    </style>
+    ''', unsafe_allow_html=True)
+
+st.title("📺 N4: УЛЬТИМАТИВНЫЙ ГЕНЕРАТОР (ЭФИР + ОТЧЕТЫ)")
+
+# --- Вспомогательные функции ---
+def format_time_hh_mm(x):
+    if isinstance(x, (datetime, time)): return x.strftime('%H-%M')
+    if isinstance(x, (int, float)):
+        total_seconds = int(round(x * 86400))
+        return str(timedelta(seconds=total_seconds)).zfill(8)[:5].replace(':', '-')
+    return str(x)[:5].replace(':', '-')
+
+def format_time_full(x):
+    if isinstance(x, (datetime, time)): return x.strftime('%H:%M:%S')
     if isinstance(x, (int, float)):
         total_seconds = int(round(x * 86400))
         return str(timedelta(seconds=total_seconds)).zfill(8)
@@ -18,72 +38,85 @@ def format_time_str(x):
 def seconds_to_hms(total_seconds):
     return str(timedelta(seconds=int(round(total_seconds)))).zfill(8)
 
-uploaded_file = st.file_uploader("Загрузите Excel файл (N4)", type=["xls", "xlsx"])
+def xml_escape(text):
+    return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
+def to_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+    return output.getvalue()
+
+# --- Sidebar ---
+with st.sidebar:
+    st.header("⚙️ Настройки N4")
+    user_path = st.text_input("Путь к видео на сервере:", value=r"I:\RECLAMA 2026")
+    st.divider()
+    uploaded_file = st.file_uploader("Загрузите медиа-план (N4)", type=["xls", "xlsx"])
+    
+    if user_path.endswith('\\'):
+        user_path = user_path[:-1]
+
+# --- Основная логика ---
 if uploaded_file:
     try:
         base_name = os.path.splitext(uploaded_file.name)[0]
         df = pd.read_excel(uploaded_file, skiprows=6)
         
-        # Колонки: Время (2), Длительность (7), ID (9)
-        df_res = df.iloc[:, [2, 7, 9]].copy()
-        df_res.columns = ['Block_Time', 'Dur', 'ID']
+        df_res = df.iloc[:, [2, 6, 7, 9]].copy()
+        df_res.columns = ['Block_Time', 'Name', 'Dur', 'ID']
         df_res['Block_Time'] = df_res['Block_Time'].ffill()
         df_res = df_res.dropna(subset=['ID'])
         
         grouped = df_res.groupby('Block_Time', sort=False)
-
-        # Списки для сбора данных
+        
+        zip_slblock_buffer = io.BytesIO()
         txt_id_content = io.StringIO()
         xlsx_id_data = []
         xlsx_timing_data = []
-
-        for i, (block_time, items) in enumerate(grouped, 1):
-            time_label = format_time_str(block_time)
-            
-            # Собираем ID в строку вида "ID1""ID2"
-            id_list_str = "".join([f'"{str(row["ID"]).split(".")[0]}"' for _, row in items.iterrows()])
-            
-            # 1. Данные для TXT и XLSX вариантов списка ID
-            txt_id_content.write(f"{time_label}\n{id_list_str}\n\n")
-            xlsx_id_data.append({
-                "Время выхода": time_label,
-                "Список ID": id_list_str
-            })
-
-            # 2. Данные для XLSX таймингов (Сумма + 20 сек)
-            total_block_seconds = items['Dur'].sum() + 20.0
-            xlsx_timing_data.append({
-                "Время выхода блока": time_label,
-                "Длительность": seconds_to_hms(total_block_seconds)
-            })
-
-        # Создаем Excel-буферы
-        def to_excel(df):
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False)
-            return output.getvalue()
-
-        # Интерфейс
-        st.subheader("Скачать файлы:")
         
-        # Секция ID
-        st.write("### 📂 Списки ID")
+        with zipfile.ZipFile(zip_slblock_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+            for i, (block_time, items) in enumerate(grouped, 1):
+                time_filename = format_time_hh_mm(block_time)
+                time_label = format_time_full(block_time)
+                pub_num = ((i - 1) % 5) + 1
+                
+                # 1. ГЕНЕРАЦИЯ SLBLOCK
+                total_dur_sl = 5.980 + items['Dur'].sum() + 6.580
+                xml_lines = [
+                    f'<slblock Source="list" Type="accurate" Sec="{total_dur_sl:.3f}" Include_subfolders="no" Path="" cptn_start_file="" cptn_end_file="" cptn_between_file="" cptn_start_en="no" cptn_end_en="no" cptn_between_en="no">version 2',
+                    f'  <item file="{xml_escape(user_path)}\\PIBLICITATE {pub_num} IN.mp4" in="0.000" dur="5.980" />'
+                ]
+                for _, row in items.iterrows():
+                    id_clean = str(row['ID']).split(".")[0]
+                    nm = str(row['Name']).strip()
+                    ext = "" if any(nm.lower().endswith(e) for e in ['.mov', '.mp4', '.tga', '.mpg']) else ".mov"
+                    xml_lines.append(f'  <item file="{xml_escape(user_path)}\\{id_clean}_{nm}{ext}" in="0.000" dur="{float(row["Dur"]):.3f}" />')
+                
+                xml_lines.append(f'  <item file="{xml_escape(user_path)}\\PIBLICITATE {pub_num} OUT.mp4" in="0.000" dur="6.580" />')
+                xml_lines.append('</slblock>')
+                
+                zip_file.writestr(f"{time_filename}.slblock", "\r\n".join(xml_lines).encode('utf-16'))
+
+                # 2. СБОР ID
+                id_list_str = "".join([f'"{str(row["ID"]).split(".")[0]}"' for _, row in items.iterrows()])
+                txt_id_content.write(f"{time_label}\n{id_list_str}\n\n")
+                xlsx_id_data.append({"Время": time_label, "Список ID": id_list_str})
+                
+                # 3. ТАЙМИНГИ (+20с)
+                total_timing_plus_20 = items['Dur'].sum() + 20.0
+                xlsx_timing_data.append({"Время блока": time_label, "Длительность (+20с)": seconds_to_hms(total_timing_plus_20)})
+
+        # --- ИНТЕРФЕЙС ---
+        st.success(f"✅ Файлы N4 готовы! Путь: {user_path}")
         c1, c2 = st.columns(2)
         with c1:
-            st.download_button("📥 IDs (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
+            st.subheader("🚀 Эфирные файлы")
+            st.download_button(f"Скачать SLBlocks ({base_name}.zip)", zip_slblock_buffer.getvalue(), f"N4_SLBLOCKS_{base_name}.zip")
         with c2:
-            st.download_button("📥 IDs (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_Table_{base_name}.xlsx")
-            
-        # Секция Таймингов
-        st.write("### ⏳ Тайминги (Длительность + 20с)")
-        st.download_button("📥 Timings (.xlsx)", to_excel(pd.DataFrame(xlsx_timing_data)), f"N4_Timings_{base_name}.xlsx")
-
-        # Предпросмотр нового формата
-        st.divider()
-        st.write("**Предпросмотр таблицы ID (Новый формат):**")
-        st.table(pd.DataFrame(xlsx_id_data).head(5))
+            st.subheader("📊 Отчетность")
+            st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
+            st.download_button("📥 Тайминги +20с (.xlsx)", to_excel(pd.DataFrame(xlsx_timing_data)), f"N4_Timings_{base_name}.xlsx")
 
     except Exception as e:
         st.error(f"Ошибка: {e}")
