@@ -5,9 +5,9 @@ import io
 import os
 
 st.set_page_config(page_title="N4 Playlist Generator", page_icon="📺")
-st.title("📺 Генератор для канала N4")
+st.title("📺 Генератор для N4 (TXT + Excel)")
 
-def format_time(x):
+def format_time_str(x):
     if isinstance(x, (datetime, time)):
         return x.strftime('%H:%M:%S')
     if isinstance(x, (int, float)):
@@ -15,16 +15,20 @@ def format_time(x):
         return str(timedelta(seconds=total_seconds)).zfill(8)
     return str(x)
 
+def seconds_to_hms(total_seconds):
+    # Преобразуем секунды в формат 00:01:23
+    return str(timedelta(seconds=int(round(total_seconds)))).zfill(8)
+
 uploaded_file = st.file_uploader("Загрузите Excel файл (N4)", type=["xls", "xlsx"])
 
 if uploaded_file:
     try:
         base_name = os.path.splitext(uploaded_file.name)[0]
         
-        # Читаем Excel, пропускаем шапку
+        # Читаем исходный файл
         df = pd.read_excel(uploaded_file, skiprows=6)
         
-        # Колонки: Время (2), Длительность (7), ID (9)
+        # Столбцы: Время (2), Длительность (7), ID (9)
         df_res = df.iloc[:, [2, 7, 9]].copy()
         df_res.columns = ['Block_Time', 'Dur', 'ID']
         
@@ -33,54 +37,63 @@ if uploaded_file:
         
         grouped = df_res.groupby('Block_Time', sort=False)
 
+        # Подготовка данных для TXT
         out_id = io.StringIO()
-        out_time_format = io.StringIO()
+        
+        # Подготовка данных для Excel
+        xls_data = []
 
         for i, (block_time, items) in enumerate(grouped, 1):
-            time_str = format_time(block_time)
+            time_label = format_time_str(block_time)
             
-            # ФАЙЛ 1: Время + ID в кавычках (слитно)
-            out_id.write(f"{time_str}\n")
+            # 1. Формируем текстовый файл (ID)
+            out_id.write(f"{time_label}\n")
             id_elements = [f'"{str(row["ID"]).split(".")[0]}"' for _, row in items.iterrows()]
             out_id.write("".join(id_elements) + "\n\n")
 
-            # ФАЙЛ 2: Время + Формат МИНУТЫ.СЕКУНДЫ (Сумма + 20 сек)
-            out_time_format.write(f"{time_str}\n")
+            # 2. Формируем данные для таблицы (Сумма + 20 сек)
+            total_block_seconds = items['Dur'].sum() + 20.0
+            hms_duration = seconds_to_hms(total_block_seconds)
             
-            # Считаем чистую сумму из Excel и добавляем 20 секунд
-            total_seconds_raw = int(round(items['Dur'].sum() + 20.0))
-            
-            # Переводим в понятные минуты и секунды
-            minutes = total_seconds_raw // 60
-            seconds = total_seconds_raw % 60
-            
-            # Записываем (например, 1.23)
-            out_time_format.write(f"{minutes}.{seconds:02d}\n\n")
+            xls_data.append({
+                "Время выхода блока": time_label,
+                "Длительность": hms_duration
+            })
 
-        # Интерфейс скачивания
-        st.subheader("Готовые файлы для N4:")
+        # Создаем DataFrame для Excel
+        df_export = pd.DataFrame(xls_data)
+        
+        # Записываем Excel в буфер
+        buffer_xlsx = io.BytesIO()
+        with pd.ExcelWriter(buffer_xlsx, engine='openpyxl') as writer:
+            df_export.to_excel(writer, index=False, sheet_name='Playlist_N4')
+        
+        # Интерфейс
+        st.subheader("Результаты генерации:")
+        
         col1, col2 = st.columns(2)
         
         with col1:
+            st.info("Текстовый файл")
             st.download_button(
-                label="📥 Скачать IDs (N4)",
+                label="📥 Скачать IDs (.txt)",
                 data=out_id.getvalue(),
                 file_name=f"N4_IDs_{base_name}.txt",
                 mime="text/plain"
             )
             
         with col2:
+            st.success("Таблица Excel")
             st.download_button(
-                label="📥 Скачать Время M.SS (N4)",
-                data=out_time_format.getvalue(),
-                file_name=f"N4_Time_{base_name}.txt",
-                mime="text/plain"
+                label="📥 Скачать Тайминги (.xlsx)",
+                data=buffer_xlsx.getvalue(),
+                file_name=f"N4_Timings_{base_name}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
-        # Предпросмотр для контроля
         st.divider()
-        st.write(f"**Предпросмотр таймингов для {base_name}:**")
-        st.text(out_time_format.getvalue()[:300])
+        st.write("**Предпросмотр данных для Excel:**")
+        st.table(df_export.head(10))
 
     except Exception as e:
-        st.error(f"Ошибка: {e}")
+        st.error(f"Произошла ошибка: {e}")
