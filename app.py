@@ -4,8 +4,8 @@ from datetime import timedelta, datetime, time
 import io
 import os
 
-st.set_page_config(page_title="Global24 Multi-TXT", page_icon="📝")
-st.title("📝 Генератор ID и Длительности (в минутах)")
+st.set_page_config(page_title="Global24 TXT Generator", page_icon="📝")
+st.title("📝 Генератор ID и Таймингов (Мин.Сек)")
 
 def format_time(x):
     if isinstance(x, (datetime, time)):
@@ -22,63 +22,62 @@ if uploaded_file:
         base_name = os.path.splitext(uploaded_file.name)[0]
         
         df = pd.read_excel(uploaded_file, skiprows=6)
-        df_res = df.iloc[:, [2, 6, 7, 9]].copy()
-        df_res.columns = ['Block_Time', 'Name', 'Dur', 'ID']
+        
+        # Колонки: Время (2), Длительность (7), ID (9)
+        df_res = df.iloc[:, [2, 7, 9]].copy()
+        df_res.columns = ['Block_Time', 'Dur', 'ID']
+        
         df_res['Block_Time'] = df_res['Block_Time'].ffill()
-        df_res = df_res.dropna(subset=['Name', 'ID'])
+        df_res = df_res.dropna(subset=['ID'])
         
         grouped = df_res.groupby('Block_Time', sort=False)
 
         out_id = io.StringIO()
-        out_min = io.StringIO()
+        out_time_format = io.StringIO()
 
         for i, (block_time, items) in enumerate(grouped, 1):
             time_str = format_time(block_time)
             
-            # ФАЙЛ 1: Только ID (без заставок, без пробелов)
+            # ФАЙЛ 1: Время + ID слитно
             out_id.write(f"{time_str}\n")
             id_elements = [f'"{str(row["ID"]).split(".")[0]}"' for _, row in items.iterrows()]
             out_id.write("".join(id_elements) + "\n\n")
 
-            # ФАЙЛ 2: (Сумма роликов + 20 сек) / 60 = МИНУТЫ
-            out_min.write(f"{time_str}\n")
+            # ФАЙЛ 2: Время + Формат МИНУТЫ.СЕКУНДЫ
+            out_time_format.write(f"{time_str}\n")
             
-            sum_dur_only_ads = items['Dur'].sum()
-            total_seconds = sum_dur_only_ads + 20.0
-            total_minutes = total_seconds / 60.0
+            # Считаем сумму секунд + ваши 20 секунд
+            total_seconds_raw = int(round(items['Dur'].sum() + 20.0))
             
-            # Записываем результат (минуты с дробной частью, например 1.50)
-            out_min.write(f"{total_minutes:.2f}\n\n")
+            # Переводим в минуты и остаток секунд
+            minutes = total_seconds_raw // 60
+            seconds = total_seconds_raw % 60
+            
+            # Записываем как 1.23 (где 23 — это реальные секунды)
+            out_time_format.write(f"{minutes}.{seconds:02d}\n\n")
 
-        # Интерфейс
-        st.subheader("Скачать файлы:")
-        c1, c2 = st.columns(2)
+        # Кнопки
+        st.subheader("Скачать результаты")
+        col1, col2 = st.columns(2)
         
-        with c1:
+        with col1:
             st.download_button(
                 label="📥 Скачать ID",
                 data=out_id.getvalue(),
-                file_name=f"IDs_{base_name}.txt",
-                mime="text/plain"
+                file_name=f"IDs_{base_name}.txt"
             )
             
-        with c2:
+        with col2:
             st.download_button(
-                label="📥 Скачать Минуты (+20с)",
-                data=out_min.getvalue(),
-                file_name=f"Minutes_{base_name}.txt",
-                mime="text/plain"
+                label="📥 Скачать Время (М.СС)",
+                data=out_time_format.getvalue(),
+                file_name=f"Time_MS_{base_name}.txt"
             )
 
-        # Превью для проверки
+        # Превью
         st.divider()
-        col_p1, col_p2 = st.columns(2)
-        with col_p1:
-            st.write("**Превью ID:**")
-            st.text(out_id.getvalue()[:200])
-        with col_p2:
-            st.write("**Превью минут:**")
-            st.text(out_min.getvalue()[:200])
+        st.write("**Пример второго файла (Минуты.Секунды):**")
+        st.text(out_time_format.getvalue()[:300])
 
     except Exception as e:
         st.error(f"Ошибка: {e}")
