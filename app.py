@@ -17,7 +17,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ГЕНЕРАТОР (ЭФИР + ОТЧЕТЫ)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (ЭФИР + ID + ТАЙМИНГИ)")
 
 # --- Вспомогательные функции ---
 def format_time_hh_mm(x):
@@ -49,9 +49,9 @@ def to_excel(df):
 # --- Sidebar ---
 with st.sidebar:
     st.header("⚙️ Настройки N4")
-    user_path = st.text_input("Путь к роликам:", value=r"I:\RECLAMA 2026")
+    user_path = st.text_input("Путь к роликам на сервере:", value=r"I:\RECLAMA 2026")
     st.divider()
-    uploaded_file = st.file_uploader("Загрузите Excel (N4)", type=["xls", "xlsx"])
+    uploaded_file = st.file_uploader("Загрузите медиа-план (Excel)", type=["xls", "xlsx"])
     
     if user_path.endswith('\\'):
         user_path = user_path[:-1]
@@ -95,34 +95,38 @@ if uploaded_file:
                     xml_lines.append(f'  <item file="{xml_escape(full_path)}" in="0.000" dur="{float(row["Dur"]):.3f}" />')
                 
                 xml_lines.append('</slblock>')
-                
-                # Кодировка UTF-16 LE с BOM
                 zip_file.writestr(f"{time_filename}.slblock", "\r\n".join(xml_lines).encode('utf-16'))
 
-                # 2. СБОР ID
+                # 2. СБОР ID (TXT + XLSX)
                 id_list_str = "".join([f'"{str(row["ID"]).split(".")[0]}"' for _, row in items.iterrows()])
+                
+                # Пишем в TXT
                 txt_id_content.write(f"{time_label}\n{id_list_str}\n\n")
-                xlsx_id_data.append({"Время": time_label, "Список ID": id_list_str})
+                
+                # Собираем для XLSX
+                xlsx_id_data.append({"Время выхода": time_label, "Список ID": id_list_str})
                 
                 # 3. ТАЙМИНГИ (+20с)
                 total_timing_plus_20 = total_dur_pure + 20.0
                 xlsx_timing_data.append({
-                    "Время блока": time_label, 
+                    "Время выхода блока": time_label, 
                     "Длительность (+20с)": seconds_to_hms(total_timing_plus_20)
                 })
 
-        st.success(f"✅ Файлы N4 успешно созданы! Путь: {user_path}")
+        st.success(f"✅ Все файлы для N4 сформированы!")
         
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("🚀 Эфир")
+            st.subheader("🚀 Эфирные файлы")
             st.download_button(f"Скачать SLBlocks ({base_name}.zip)", zip_slblock_buffer.getvalue(), f"N4_SLBLOCKS_{base_name}.zip")
+        
         with col2:
             st.subheader("📊 Отчеты")
-            st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_{base_name}.xlsx")
+            st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
+            st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_Table_{base_name}.xlsx")
             st.download_button("📥 Тайминги +20с (.xlsx)", to_excel(pd.DataFrame(xlsx_timing_data)), f"N4_Timings_{base_name}.xlsx")
 
     except Exception as e:
-        st.error(f"Ошибка: {e}")
+        st.error(f"Ошибка при обработке: {e}")
 else:
-    st.info("👈 Загрузите файл в боковой панели.")
+    st.info("👈 Загрузите медиа-план в боковой панели.")
