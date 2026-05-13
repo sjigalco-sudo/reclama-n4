@@ -17,7 +17,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ГЕНЕРАТОР (ЭФИР: ТОЛЬКО ID)")
+st.title("📺 N4: ГЕНЕРАТОР (SLblock+ID+Тайминг)")
 
 # --- Вспомогательные функции ---
 def format_time_hh_mm(x):
