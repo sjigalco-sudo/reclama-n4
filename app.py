@@ -19,7 +19,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Стабильный PDF через FPDF2)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Исправленный PDF)")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -73,103 +73,4 @@ def generate_exact_report(timing_rows, file_date):
     
     ws["E1"] = file_date
     ws["E1"].font = font_regular
-    ws["E2"] = "N4"
-    ws["E2"].font = font_bold
-    
-    ws["D6"] = "Длительность рекламных блоков"
-    ws["D6"].font = font_bold
-    
-    ws["C7"] = "Длина ролика"
-    ws["C7"].font = font_bold
-    ws["C7"].alignment = align_center
-    ws["C7"].border = table_border
-    
-    ws["E7"] = "Название блока"
-    ws["E7"].font = font_bold
-    ws["E7"].alignment = align_center
-    ws["E7"].border = table_border
-    ws["D7"].border = table_border 
-    
-    current_row = 9
-    for row in timing_rows:
-        ws[f"C{current_row}"] = row["dur"]
-        ws[f"C{current_row}"].font = font_regular
-        ws[f"C{current_row}"].alignment = align_center
-        ws[f"C{current_row}"].border = table_border
-        ws[f"D{current_row}"].border = table_border
-        
-        ws[f"E{current_row}"] = row["name"]
-        ws[f"E{current_row}"].font = font_regular
-        ws[f"E{current_row}"].alignment = align_left
-        ws[f"E{current_row}"].border = table_border
-        current_row += 1
-        
-    ws.column_dimensions['A'].width = 3
-    ws.column_dimensions['B'].width = 3
-    ws.column_dimensions['C'].width = 16
-    ws.column_dimensions['D'].width = 5
-    ws.column_dimensions['E'].width = 18
-    
-    output = io.BytesIO()
-    wb.save(output)
-    return output.getvalue()
-
-def generate_filtered_mediaplan(uploaded_file_bytes):
-    wb = openpyxl.load_workbook(io.BytesIO(uploaded_file_bytes))
-    ws = wb.active
-    
-    if ws.max_column > 10:
-        ws.delete_cols(11, ws.max_column - 10)
-    ws.delete_cols(8, 2)
-    ws.delete_cols(6, 1)
-    ws.delete_cols(4, 1)
-    ws.delete_cols(1, 2)
-    
-    ws.column_dimensions['A'].width = 15
-    ws.column_dimensions['B'].width = 35
-    ws.column_dimensions['C'].width = 15
-    ws.column_dimensions['D'].width = 12
-    
-    output = io.BytesIO()
-    wb.save(output)
-    return output.getvalue()
-
-class PDFPlan(FPDF):
-    def __init__(self, file_date):
-        super().__init__()
-        self.file_date = file_date
-
-    def header(self):
-        # Настройка шрифта с поддержкой кириллицы (используем стандартный встроенный Helvetica/Arial рендеринг Core-шрифтов)
-        self.set_font('helvetica', 'B', 16)
-        self.cell(0, 10, 'Media Plan - N4 Channel', ln=1, align='L')
-        self.set_font('helvetica', '', 11)
-        self.cell(0, 8, f'Air Date: {self.file_date}', ln=1, align='L')
-        self.line(10, 28, 200, 28)
-        self.ln(5)
-
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('helvetica', 'I', 9)
-        self.cell(0, 10, f'Page {self.page_no()}', align='R')
-
-def generate_filtered_mediaplan_pdf(uploaded_file_bytes, file_date):
-    """Генерирует PDF без использования тяжелых внешних Linux-библиотек"""
-    df = pd.read_excel(io.BytesIO(uploaded_file_bytes), skiprows=6)
-    
-    df_res = df.iloc[:, [2, 4, 7, 9]].copy()
-    df_res.columns = ['Time', 'Title', 'Dur', 'ID']
-    df_res['Time'] = pd.to_datetime(df_res['Time'], format='%H:%M:%S', errors='coerce').dt.time
-    df_res['Time'] = df_res['Time'].ffill()
-    df_res = df_res.dropna(subset=['ID'])
-    
-    pdf = PDFPlan(file_date)
-    pdf.add_page()
-    
-    # Шапка таблицы
-    pdf.set_font('helvetica', 'B', 10)
-    pdf.set_fill_color(240, 242, 245)
-    
-    pdf.cell(30, 8, 'Block Time', border=1, align='C', fill=True)
-    pdf.cell(95, 8, 'Spot Title', border=1, align='L', fill=True)
-    pdf.cell(35, 8, 'Duration
+    ws
