@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Точная копия таблицы с границами)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (тайминги+SLBlock)")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -234,7 +234,7 @@ if uploaded_file:
         
         with col2:
             st.subheader("📊 Отчетность")
-            st.download_button("📥 Визуальный Отчет Таймингов с границами (.xlsx)", generate_exact_report(timing_rows_formatted, file_date), f"N4_Timings_{base_name}.xlsx")
+            st.download_button("📥 Отчет Таймингов  (.xlsx)", generate_exact_report(timing_rows_formatted, file_date), f"N4_Timings_{base_name}.xlsx")
             st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_{base_name}.xlsx")
             st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
 
