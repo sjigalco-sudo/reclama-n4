@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Только Excel-отчеты)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Исправленный)")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -196,49 +196,3 @@ if uploaded_file:
         xlsx_id_data = []
         timing_rows_formatted = []
         hour_counts = {}
-        
-        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-            for i, (block_time, items) in enumerate(grouped, 1):
-                h = block_time.hour
-                hour_counts[h] = hour_counts.get(h, 0) + 1
-                
-                file_name = f"{h:02d}-{hour_counts[h]}"
-                time_str = block_time.strftime('%H:%M:%S')
-                
-                report_hour = 24 if h == 0 else h
-                report_block_name = f"Реклама {report_hour}.{hour_counts[h]}"
-                
-                if h == 0:
-                    display_time_str = f"24:{block_time.strftime('%M:%S')}"
-                else:
-                    display_time_str = f"{h}:{block_time.strftime('%M:%S')}"
-                
-                soc = SOCIAL_ADS[((i - 1) % 5) + 1]
-                
-                pure_ads_seconds = items['Dur'].sum()
-                total_block_dur = PUB_DUR + pure_ads_seconds + PUB_DUR + soc['dur']
-                
-                timing_rows_formatted.append({
-                    "dur": seconds_to_hms_custom(total_block_dur),
-                    "name": report_block_name
-                })
-
-                id_list_raw = [str(row['ID']).split(".")[0] for _, row in items.iterrows()]
-                id_list_str = "".join([f'"{x}"' for x in id_list_raw])
-                
-                txt_id_content.write(f"{display_time_str}\n{id_list_str}\n\n")
-                xlsx_id_data.append({"Время": display_time_str, "Список ID": id_list_str})
-
-                # XML SLBlock
-                xml = [
-                    f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Image_using_type="Video files"\r\n      Sec="{total_block_dur:.3f}"\r\n      Include_subfolders="no"\r\n      Path=""\r\n      cptn_start_file=""\r\n      cptn_end_file=""\r\n      cptn_between_file=""\r\n      cptn_start_en="no"\r\n      cptn_end_en="no"\r\n      cptn_between_en="no"\r\n      Image_Duration="1.000">\r\n',
-                    '      version 3\r\n',
-                    f'      <item\r\n            file="{xml_escape(path_soc)}\\{PUB_FILE}"\r\n            in="0.000"\r\n            dur="{PUB_DUR:.3f}"/>\r\n'
-                ]
-                
-                for _, row in items.iterrows():
-                    id_clean = str(row['ID']).split(".")[0]
-                    ext = ".mp4" if id_clean in mp4_ids else ".mov"
-                    xml.append(f'      <item\r\n            file="{xml_escape(path_ads)}\\{id_clean}{ext}"\r\n            in="0.000"\r\n            dur="{float(row["Dur"]):.3f}"/>\r\n')
-                
-                xml.append(f'      <item\r\n            file="{xml_escape(path_soc)}\\{PUB_FILE}"\r\n
