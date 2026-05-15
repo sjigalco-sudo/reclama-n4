@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Исправленный)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -151,48 +151,4 @@ def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         df.to_excel(writer, index=False)
-    return output.getvalue()
-
-# --- Sidebar ---
-with st.sidebar:
-    st.header("⚙️ Настройки")
-    path_ads = st.text_input("Путь к рекламе:", value=r"D:\AIR\REKLAMA 2026")
-    path_soc = st.text_input("Путь к заставкам:", value=r"D:\AIR\REKLAMA 2025")
-    
-    st.divider()
-    current_input = st.text_area("ID для MP4 (через запятую):", value=", ".join(saved_mp4))
-    mp4_ids = [x.strip() for x in current_input.split(",") if x.strip()]
-    if sorted(mp4_ids) != sorted(saved_mp4):
-        saved_mp4 = save_mp4_ids(mp4_ids)
-        st.toast("💾 База MP4 сохранена!")
-
-    st.divider()
-    uploaded_file = st.file_uploader("Загрузите медиаплан", type=["xls", "xlsx"])
-
-# --- Логика ---
-if uploaded_file:
-    try:
-        file_bytes = uploaded_file.read()
-        base_name = os.path.splitext(uploaded_file.name)[0]
-        
-        file_date = datetime.now().strftime("%Y-%m-%d")
-        for part in base_name.split():
-            if len(part) == 10 and part.count('.') == 2:
-                file_date = part
-        
-        df = pd.read_excel(io.BytesIO(file_bytes), skiprows=6)
-        
-        df_res = df.iloc[:, [2, 7, 9]].copy()
-        df_res.columns = ['Block_Time', 'Dur', 'ID']
-        
-        df_res['Block_Time'] = pd.to_datetime(df_res['Block_Time'], format='%H:%M:%S', errors='coerce').dt.time
-        df_res['Block_Time'] = df_res['Block_Time'].ffill()
-        df_res = df_res.dropna(subset=['ID'])
-        
-        grouped = df_res.groupby('Block_Time', sort=False)
-        
-        zip_buffer = io.BytesIO()
-        txt_id_content = io.StringIO()
-        xlsx_id_data = []
-        timing_rows_formatted = []
-        hour_counts = {}
+    return output
