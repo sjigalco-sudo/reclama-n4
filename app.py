@@ -22,7 +22,7 @@ st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (с автосохранен�
 
 # --- Константы N4 ---
 DEFAULT_REKLAMA_PATH = r"D:\AIR\REKLAMA 2026"
-DEFAULT_SOCIAL_PATH = r"D:\AIR\REKLAMA 2025"
+DEFAULT_SOCIAL_PATH = r"D:\AIR\REKLAMA 2026"
 PUB_FILE = "PUBLICITATE_HD.mp4"
 PUB_DUR = 5.000
 DB_FILE = "mp4_database.txt"  # Файл для хранения ID на будущем
