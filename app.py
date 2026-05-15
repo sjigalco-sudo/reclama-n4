@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (тайминги+SLBlock)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Формат Ч:ММ:СС + Границы)")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -49,12 +49,13 @@ saved_mp4 = load_mp4_ids()
 def xml_escape(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
-def seconds_to_hms(total_seconds):
+def seconds_to_hms_custom(total_seconds):
+    """Преобразует секунды в формат Ч:ММ:СС (без ведущего нуля для часов)"""
     total_secs = int(round(total_seconds))
     h = total_secs // 3600
     m = (total_secs % 3600) // 60
     s = total_secs % 60
-    return f"{h:02d}:{m:02d}:{s:02d}"
+    return f"{h}:{m:02d}:{s:02d}"
 
 def generate_exact_report(timing_rows, file_date):
     """Создает Excel-файл с точным воссозданием разметки, шрифтов и обрамления таблиц"""
@@ -62,16 +63,13 @@ def generate_exact_report(timing_rows, file_date):
     ws = wb.active
     ws.title = "Лист1"
     
-    # Показываем сетку листа Excel
     ws.views.sheetView[0].showGridLines = True
     
-    # Определение стилей
     font_regular = Font(name="Calibri", size=11)
     font_bold = Font(name="Calibri", size=11, bold=True)
     align_center = Alignment(horizontal="center", vertical="center")
     align_left = Alignment(horizontal="left", vertical="center")
     
-    # Стиль тонкой черной границы для таблицы
     thin_side = Side(border_style="thin", color="000000")
     table_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
     
@@ -97,22 +95,18 @@ def generate_exact_report(timing_rows, file_date):
     ws["E7"].alignment = align_center
     ws["E7"].border = table_border
     
-    # Добавим пустую ячейку D7 в рамку, если в оригинале строка 7 обрамлена полностью
     ws["D7"].border = table_border 
     
-    # 4. Заполнение данными и отрисовка границ ячеек (с 9-й строки)
+    # 4. Заполнение данными (с 9-й строки)
     current_row = 9
     for row in timing_rows:
-        # Ячейка тайминга
         ws[f"C{current_row}"] = row["dur"]
         ws[f"C{current_row}"].font = font_regular
         ws[f"C{current_row}"].alignment = align_center
         ws[f"C{current_row}"].border = table_border
         
-        # Пустая разделяющая ячейка (тоже с рамкой, чтобы сохранялась целостность таблицы)
         ws[f"D{current_row}"].border = table_border
         
-        # Ячейка названия блока
         ws[f"E{current_row}"] = row["name"]
         ws[f"E{current_row}"].font = font_regular
         ws[f"E{current_row}"].alignment = align_left
@@ -120,14 +114,12 @@ def generate_exact_report(timing_rows, file_date):
         
         current_row += 1
         
-    # Ширина колонок для идеального отображения без обрезки текста
     ws.column_dimensions['A'].width = 3
     ws.column_dimensions['B'].width = 3
-    ws.column_dimensions['C'].width = 16  # Для "00:06:15"
-    ws.column_dimensions['D'].width = 5   # Пробел
-    ws.column_dimensions['E'].width = 18  # Для "Реклама 6.1"
+    ws.column_dimensions['C'].width = 16
+    ws.column_dimensions['D'].width = 5
+    ws.column_dimensions['E'].width = 18
     
-    # Превращаем в байты для скачивания
     output = io.BytesIO()
     wb.save(output)
     return output.getvalue()
@@ -159,7 +151,6 @@ if uploaded_file:
     try:
         base_name = os.path.splitext(uploaded_file.name)[0]
         
-        # Парсинг даты из имени файла
         file_date = datetime.now().strftime("%Y-%m-%d")
         for part in base_name.split():
             if len(part) == 10 and part.count('.') == 2:
@@ -189,7 +180,16 @@ if uploaded_file:
                 
                 file_name = f"{h:02d}-{hour_counts[h]}"
                 time_str = block_time.strftime('%H:%M:%S')
-                report_block_name = f"Реклама {h}.{hour_counts[h]}"
+                
+                # Логика замены 00 на 24 для отчета
+                report_hour = 24 if h == 0 else h
+                report_block_name = f"Реклама {report_hour}.{hour_counts[h]}"
+                
+                # Корректируем вывод времени для текстовых отчетов по ID
+                if h == 0:
+                    display_time_str = f"24:{block_time.strftime('%M:%S')}"
+                else:
+                    display_time_str = f"{h}:{block_time.strftime('%M:%S')}"
                 
                 soc = SOCIAL_ADS[((i - 1) % 5) + 1]
                 
@@ -197,15 +197,15 @@ if uploaded_file:
                 total_block_dur = PUB_DUR + pure_ads_seconds + PUB_DUR + soc['dur']
                 
                 timing_rows_formatted.append({
-                    "dur": seconds_to_hms(total_block_dur),
+                    "dur": seconds_to_hms_custom(total_block_dur),
                     "name": report_block_name
                 })
 
                 id_list_raw = [str(row['ID']).split(".")[0] for _, row in items.iterrows()]
                 id_list_str = "".join([f'"{x}"' for x in id_list_raw])
                 
-                txt_id_content.write(f"{time_str}\n{id_list_str}\n\n")
-                xlsx_id_data.append({"Время": time_str, "Список ID": id_list_str})
+                txt_id_content.write(f"{display_time_str}\n{id_list_str}\n\n")
+                xlsx_id_data.append({"Время": display_time_str, "Список ID": id_list_str})
 
                 # XML SLBlock
                 xml = [
@@ -225,7 +225,7 @@ if uploaded_file:
                 
                 zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
 
-        st.success(f"✅ Успешно обработано!")
+        st.success(f"✅ Успешно обработано! Формат времени в отчете изменен на Ч:ММ:СС.")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -234,7 +234,7 @@ if uploaded_file:
         
         with col2:
             st.subheader("📊 Отчетность")
-            st.download_button("📥 Отчет Таймингов  (.xlsx)", generate_exact_report(timing_rows_formatted, file_date), f"N4_Timings_{base_name}.xlsx")
+            st.download_button("📥 Визуальный Отчет Таймингов (.xlsx)", generate_exact_report(timing_rows_formatted, file_date), f"N4_Timings_{base_name}.xlsx")
             st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_{base_name}.xlsx")
             st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
 
