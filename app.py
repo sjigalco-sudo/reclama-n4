@@ -119,36 +119,3 @@ def generate_exact_report(timing_rows, file_date):
     ws.column_dimensions['C'].width = 16
     ws.column_dimensions['D'].width = 5
     ws.column_dimensions['E'].width = 18
-    
-    output = io.BytesIO()
-    wb.save(output)
-    return output.getvalue()
-
-def generate_filtered_mediaplan(uploaded_file_bytes):
-    """Удаляет из оригинального медиаплана все лишние колонки, сохраняя стили"""
-    wb = openpyxl.load_workbook(io.BytesIO(uploaded_file_bytes))
-    ws = wb.active
-    
-    # Удаляем ненужные столбцы справа налево, чтобы индексы не съезжали
-    if ws.max_column > 10:
-        ws.delete_cols(11, ws.max_column - 10)
-    ws.delete_cols(8, 2)  # Дни, Стоимость
-    ws.delete_cols(6, 1)  # Хроно
-    ws.delete_cols(4, 1)  # Документ
-    ws.delete_cols(1, 2)  # №, Позиция
-    
-    # Настраиваем оптимальную ширину для оставшихся колонок
-    ws.column_dimensions['A'].width = 15  # Время выхода
-    ws.column_dimensions['B'].width = 35  # Наименование ролика
-    ws.column_dimensions['C'].width = 15  # Длительность
-    ws.column_dimensions['D'].width = 12  # ID
-    
-    output = io.BytesIO()
-    wb.save(output)
-    return output.getvalue()
-
-def to_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False)
-    return output
