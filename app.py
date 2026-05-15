@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Формат Ч:ММ:СС + Границы)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Общий путь к файлам)")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -46,6 +46,23 @@ def save_mp4_ids(id_list):
 
 saved_mp4 = load_mp4_ids()
 
+# --- Sidebar ---
+with st.sidebar:
+    st.header("⚙️ Настройки")
+    # Одно общее поле для пути к эфирным материалам
+    path_air = st.text_input("Путь к файлам (Реклама и Заставки):", value=r"D:\AIR\REKLAMA 2026")
+    
+    st.divider()
+    current_input = st.text_area("ID для MP4 (через запятую):", value=", ".join(saved_mp4))
+    mp4_ids = [x.strip() for x in current_input.split(",") if x.strip()]
+    if sorted(mp4_ids) != sorted(saved_mp4):
+        saved_mp4 = save_mp4_ids(mp4_ids)
+        st.toast("💾 База MP4 сохранена!")
+
+    st.divider()
+    uploaded_file = st.file_uploader("Загрузите медиаплан", type=["xls", "xlsx"])
+
+# --- Вспомогательные функции ---
 def xml_escape(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
@@ -130,22 +147,6 @@ def to_excel(df):
         df.to_excel(writer, index=False)
     return output.getvalue()
 
-# --- Sidebar ---
-with st.sidebar:
-    st.header("⚙️ Настройки")
-    path_ads = st.text_input("Путь к рекламе:", value=r"D:\AIR\REKLAMA 2026")
-    path_soc = st.text_input("Путь к заставкам:", value=r"D:\AIR\REKLAMA 2025")
-    
-    st.divider()
-    current_input = st.text_area("ID для MP4 (через запятую):", value=", ".join(saved_mp4))
-    mp4_ids = [x.strip() for x in current_input.split(",") if x.strip()]
-    if sorted(mp4_ids) != sorted(saved_mp4):
-        saved_mp4 = save_mp4_ids(mp4_ids)
-        st.toast("💾 База MP4 сохранена!")
-
-    st.divider()
-    uploaded_file = st.file_uploader("Загрузите медиаплан", type=["xls", "xlsx"])
-
 # --- Логика ---
 if uploaded_file:
     try:
@@ -207,25 +208,25 @@ if uploaded_file:
                 txt_id_content.write(f"{display_time_str}\n{id_list_str}\n\n")
                 xlsx_id_data.append({"Время": display_time_str, "Список ID": id_list_str})
 
-                # XML SLBlock
+                # XML SLBlock (Используем общий путь path_air для всех элементов)
                 xml = [
                     f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Image_using_type="Video files"\r\n      Sec="{total_block_dur:.3f}"\r\n      Include_subfolders="no"\r\n      Path=""\r\n      cptn_start_file=""\r\n      cptn_end_file=""\r\n      cptn_between_file=""\r\n      cptn_start_en="no"\r\n      cptn_end_en="no"\r\n      cptn_between_en="no"\r\n      Image_Duration="1.000">\r\n',
                     '      version 3\r\n',
-                    f'      <item\r\n            file="{xml_escape(path_soc)}\\{PUB_FILE}"\r\n            in="0.000"\r\n            dur="{PUB_DUR:.3f}"/>\r\n'
+                    f'      <item\r\n            file="{xml_escape(path_air)}\\{PUB_FILE}"\r\n            in="0.000"\r\n            dur="{PUB_DUR:.3f}"/>\r\n'
                 ]
                 
                 for _, row in items.iterrows():
                     id_clean = str(row['ID']).split(".")[0]
                     ext = ".mp4" if id_clean in mp4_ids else ".mov"
-                    xml.append(f'      <item\r\n            file="{xml_escape(path_ads)}\\{id_clean}{ext}"\r\n            in="0.000"\r\n            dur="{float(row["Dur"]):.3f}"/>\r\n')
+                    xml.append(f'      <item\r\n            file="{xml_escape(path_air)}\\{id_clean}{ext}"\r\n            in="0.000"\r\n            dur="{float(row["Dur"]):.3f}"/>\r\n')
                 
-                xml.append(f'      <item\r\n            file="{xml_escape(path_soc)}\\{PUB_FILE}"\r\n            in="0.000"\r\n            dur="{PUB_DUR:.3f}"/>\r\n')
-                xml.append(f'      <item\r\n            file="{xml_escape(path_soc)}\\{soc["file"]}"\r\n            in="0.000"\r\n            dur="{soc["dur"]:.3f}"/>\r\n')
+                xml.append(f'      <item\r\n            file="{xml_escape(path_air)}\\{PUB_FILE}"\r\n            in="0.000"\r\n            dur="{PUB_DUR:.3f}"/>\r\n')
+                xml.append(f'      <item\r\n            file="{xml_escape(path_air)}\\{soc["file"]}"\r\n            in="0.000"\r\n            dur="{soc["dur"]:.3f}"/>\r\n')
                 xml.append('</slblock>')
                 
                 zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
 
-        st.success(f"✅ Успешно обработано! Формат времени в отчете изменен на Ч:ММ:СС.")
+        st.success(f"✅ Успешно обработано! Все файлы ссылаются на общую папку.")
         
         col1, col2 = st.columns(2)
         with col1:
