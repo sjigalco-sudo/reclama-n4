@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Общий путь к файлам)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -49,7 +49,6 @@ saved_mp4 = load_mp4_ids()
 # --- Sidebar ---
 with st.sidebar:
     st.header("⚙️ Настройки")
-    # Одно общее поле для пути к эфирным материалам
     path_air = st.text_input("Путь к файлам (Реклама и Заставки):", value=r"D:\AIR\REKLAMA 2026")
     
     st.divider()
@@ -90,18 +89,13 @@ def generate_exact_report(timing_rows, file_date):
     thin_side = Side(border_style="thin", color="000000")
     table_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
     
-    # 1. Шапка (Дата и Канал в столбце E)
     ws["E1"] = file_date
     ws["E1"].font = font_regular
-    
     ws["E2"] = "N4"
     ws["E2"].font = font_bold
-    
-    # 2. Заголовок над таблицей (строка 6, колонка D)
     ws["D6"] = "Длительность рекламных блоков"
     ws["D6"].font = font_bold
     
-    # 3. Шапка таблицы (строка 7) с обрамлением
     ws["C7"] = "Длина ролика"
     ws["C7"].font = font_bold
     ws["C7"].alignment = align_center
@@ -111,24 +105,20 @@ def generate_exact_report(timing_rows, file_date):
     ws["E7"].font = font_bold
     ws["E7"].alignment = align_center
     ws["E7"].border = table_border
-    
     ws["D7"].border = table_border 
     
-    # 4. Заполнение данными (с 9-й строки)
     current_row = 9
     for row in timing_rows:
         ws[f"C{current_row}"] = row["dur"]
         ws[f"C{current_row}"].font = font_regular
         ws[f"C{current_row}"].alignment = align_center
         ws[f"C{current_row}"].border = table_border
-        
         ws[f"D{current_row}"].border = table_border
         
         ws[f"E{current_row}"] = row["name"]
         ws[f"E{current_row}"].font = font_regular
         ws[f"E{current_row}"].alignment = align_left
         ws[f"E{current_row}"].border = table_border
-        
         current_row += 1
         
     ws.column_dimensions['A'].width = 3
@@ -179,14 +169,15 @@ if uploaded_file:
                 h = block_time.hour
                 hour_counts[h] = hour_counts.get(h, 0) + 1
                 
-                file_name = f"{h:02d}-{hour_counts[h]}"
                 time_str = block_time.strftime('%H:%M:%S')
                 
-                # Логика замены 00 на 24 для отчета
+                # Заменяем 00 на 24 для отчета и для имени файла
                 report_hour = 24 if h == 0 else h
                 report_block_name = f"Реклама {report_hour}.{hour_counts[h]}"
                 
-                # Корректируем вывод времени для текстовых отчетов по ID
+                # Используем report_hour с ведущим нулем, чтобы имена файлов были "24-1.slblock"
+                file_name = f"{report_hour:02d}-{hour_counts[h]}"
+                
                 if h == 0:
                     display_time_str = f"24:{block_time.strftime('%M:%S')}"
                 else:
@@ -208,7 +199,7 @@ if uploaded_file:
                 txt_id_content.write(f"{display_time_str}\n{id_list_str}\n\n")
                 xlsx_id_data.append({"Время": display_time_str, "Список ID": id_list_str})
 
-                # XML SLBlock (Используем общий путь path_air для всех элементов)
+                # XML SLBlock
                 xml = [
                     f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Image_using_type="Video files"\r\n      Sec="{total_block_dur:.3f}"\r\n      Include_subfolders="no"\r\n      Path=""\r\n      cptn_start_file=""\r\n      cptn_end_file=""\r\n      cptn_between_file=""\r\n      cptn_start_en="no"\r\n      cptn_end_en="no"\r\n      cptn_between_en="no"\r\n      Image_Duration="1.000">\r\n',
                     '      version 3\r\n',
@@ -226,7 +217,7 @@ if uploaded_file:
                 
                 zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
 
-        st.success(f"✅ Успешно обработано! Все файлы ссылаются на общую папку.")
+        st.success(f"✅ Успешно обработано! ")
         
         col1, col2 = st.columns(2)
         with col1:
