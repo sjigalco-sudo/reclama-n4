@@ -6,7 +6,6 @@ import os
 from datetime import datetime
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side
-from fpdf import FPDF
 
 # Конфигурация страницы
 st.set_page_config(page_title="N4 | Full Generator", page_icon="📺", layout="wide")
@@ -19,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Исправленный PDF)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Только Excel-отчеты)")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -51,6 +50,7 @@ def xml_escape(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 def seconds_to_hms_custom(total_seconds):
+    """Преобразует секунды в формат Ч:ММ:СС (без ведущего нуля для часов)"""
     total_secs = int(round(total_seconds))
     h = total_secs // 3600
     m = (total_secs % 3600) // 60
@@ -58,9 +58,11 @@ def seconds_to_hms_custom(total_seconds):
     return f"{h}:{m:02d}:{s:02d}"
 
 def generate_exact_report(timing_rows, file_date):
+    """Создает Excel-файл с точным воссозданием разметки, шрифтов и обрамления таблиц"""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Лист1"
+    
     ws.views.sheetView[0].showGridLines = True
     
     font_regular = Font(name="Calibri", size=11)
@@ -71,6 +73,172 @@ def generate_exact_report(timing_rows, file_date):
     thin_side = Side(border_style="thin", color="000000")
     table_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
     
+    # 1. Шапка (Дата и Канал в столбце E)
     ws["E1"] = file_date
     ws["E1"].font = font_regular
-    ws
+    
+    ws["E2"] = "N4"
+    ws["E2"].font = font_bold
+    
+    # 2. Заголовок над таблицей (строка 6, колонка D)
+    ws["D6"] = "Длительность рекламных блоков"
+    ws["D6"].font = font_bold
+    
+    # 3. Шапка таблицы (строка 7) с обрамлением
+    ws["C7"] = "Длина ролика"
+    ws["C7"].font = font_bold
+    ws["C7"].alignment = align_center
+    ws["C7"].border = table_border
+    
+    ws["E7"] = "Название блока"
+    ws["E7"].font = font_bold
+    ws["E7"].alignment = align_center
+    ws["E7"].border = table_border
+    
+    ws["D7"].border = table_border 
+    
+    # 4. Заполнение данными (с 9-й строки)
+    current_row = 9
+    for row in timing_rows:
+        ws[f"C{current_row}"] = row["dur"]
+        ws[f"C{current_row}"].font = font_regular
+        ws[f"C{current_row}"].alignment = align_center
+        ws[f"C{current_row}"].border = table_border
+        
+        ws[f"D{current_row}"].border = table_border
+        
+        ws[f"E{current_row}"] = row["name"]
+        ws[f"E{current_row}"].font = font_regular
+        ws[f"E{current_row}"].alignment = align_left
+        ws[f"E{current_row}"].border = table_border
+        
+        current_row += 1
+        
+    ws.column_dimensions['A'].width = 3
+    ws.column_dimensions['B'].width = 3
+    ws.column_dimensions['C'].width = 16
+    ws.column_dimensions['D'].width = 5
+    ws.column_dimensions['E'].width = 18
+    
+    output = io.BytesIO()
+    wb.save(output)
+    return output.getvalue()
+
+def generate_filtered_mediaplan(uploaded_file_bytes):
+    """Удаляет из оригинального медиаплана все лишние колонки, сохраняя стили"""
+    wb = openpyxl.load_workbook(io.BytesIO(uploaded_file_bytes))
+    ws = wb.active
+    
+    # Удаляем ненужные столбцы справа налево, чтобы индексы не съезжали
+    if ws.max_column > 10:
+        ws.delete_cols(11, ws.max_column - 10)
+    ws.delete_cols(8, 2)  # Дни, Стоимость
+    ws.delete_cols(6, 1)  # Хроно
+    ws.delete_cols(4, 1)  # Документ
+    ws.delete_cols(1, 2)  # №, Позиция
+    
+    # Настраиваем оптимальную ширину для оставшихся колонок
+    ws.column_dimensions['A'].width = 15  # Время выхода
+    ws.column_dimensions['B'].width = 35  # Наименование ролика
+    ws.column_dimensions['C'].width = 15  # Длительность
+    ws.column_dimensions['D'].width = 12  # ID
+    
+    output = io.BytesIO()
+    wb.save(output)
+    return output.getvalue()
+
+def to_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+    return output.getvalue()
+
+# --- Sidebar ---
+with st.sidebar:
+    st.header("⚙️ Настройки")
+    path_ads = st.text_input("Путь к рекламе:", value=r"D:\AIR\REKLAMA 2026")
+    path_soc = st.text_input("Путь к заставкам:", value=r"D:\AIR\REKLAMA 2025")
+    
+    st.divider()
+    current_input = st.text_area("ID для MP4 (через запятую):", value=", ".join(saved_mp4))
+    mp4_ids = [x.strip() for x in current_input.split(",") if x.strip()]
+    if sorted(mp4_ids) != sorted(saved_mp4):
+        saved_mp4 = save_mp4_ids(mp4_ids)
+        st.toast("💾 База MP4 сохранена!")
+
+    st.divider()
+    uploaded_file = st.file_uploader("Загрузите медиаплан", type=["xls", "xlsx"])
+
+# --- Логика ---
+if uploaded_file:
+    try:
+        file_bytes = uploaded_file.read()
+        base_name = os.path.splitext(uploaded_file.name)[0]
+        
+        file_date = datetime.now().strftime("%Y-%m-%d")
+        for part in base_name.split():
+            if len(part) == 10 and part.count('.') == 2:
+                file_date = part
+        
+        df = pd.read_excel(io.BytesIO(file_bytes), skiprows=6)
+        
+        df_res = df.iloc[:, [2, 7, 9]].copy()
+        df_res.columns = ['Block_Time', 'Dur', 'ID']
+        
+        df_res['Block_Time'] = pd.to_datetime(df_res['Block_Time'], format='%H:%M:%S', errors='coerce').dt.time
+        df_res['Block_Time'] = df_res['Block_Time'].ffill()
+        df_res = df_res.dropna(subset=['ID'])
+        
+        grouped = df_res.groupby('Block_Time', sort=False)
+        
+        zip_buffer = io.BytesIO()
+        txt_id_content = io.StringIO()
+        xlsx_id_data = []
+        timing_rows_formatted = []
+        hour_counts = {}
+        
+        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+            for i, (block_time, items) in enumerate(grouped, 1):
+                h = block_time.hour
+                hour_counts[h] = hour_counts.get(h, 0) + 1
+                
+                file_name = f"{h:02d}-{hour_counts[h]}"
+                time_str = block_time.strftime('%H:%M:%S')
+                
+                report_hour = 24 if h == 0 else h
+                report_block_name = f"Реклама {report_hour}.{hour_counts[h]}"
+                
+                if h == 0:
+                    display_time_str = f"24:{block_time.strftime('%M:%S')}"
+                else:
+                    display_time_str = f"{h}:{block_time.strftime('%M:%S')}"
+                
+                soc = SOCIAL_ADS[((i - 1) % 5) + 1]
+                
+                pure_ads_seconds = items['Dur'].sum()
+                total_block_dur = PUB_DUR + pure_ads_seconds + PUB_DUR + soc['dur']
+                
+                timing_rows_formatted.append({
+                    "dur": seconds_to_hms_custom(total_block_dur),
+                    "name": report_block_name
+                })
+
+                id_list_raw = [str(row['ID']).split(".")[0] for _, row in items.iterrows()]
+                id_list_str = "".join([f'"{x}"' for x in id_list_raw])
+                
+                txt_id_content.write(f"{display_time_str}\n{id_list_str}\n\n")
+                xlsx_id_data.append({"Время": display_time_str, "Список ID": id_list_str})
+
+                # XML SLBlock
+                xml = [
+                    f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Image_using_type="Video files"\r\n      Sec="{total_block_dur:.3f}"\r\n      Include_subfolders="no"\r\n      Path=""\r\n      cptn_start_file=""\r\n      cptn_end_file=""\r\n      cptn_between_file=""\r\n      cptn_start_en="no"\r\n      cptn_end_en="no"\r\n      cptn_between_en="no"\r\n      Image_Duration="1.000">\r\n',
+                    '      version 3\r\n',
+                    f'      <item\r\n            file="{xml_escape(path_soc)}\\{PUB_FILE}"\r\n            in="0.000"\r\n            dur="{PUB_DUR:.3f}"/>\r\n'
+                ]
+                
+                for _, row in items.iterrows():
+                    id_clean = str(row['ID']).split(".")[0]
+                    ext = ".mp4" if id_clean in mp4_ids else ".mov"
+                    xml.append(f'      <item\r\n            file="{xml_escape(path_ads)}\\{id_clean}{ext}"\r\n            in="0.000"\r\n            dur="{float(row["Dur"]):.3f}"/>\r\n')
+                
+                xml.append(f'      <item\r\n            file="{xml_escape(path_soc)}\\{PUB_FILE}"\r\n
