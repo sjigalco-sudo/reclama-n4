@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Исправленный)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Формат Ч:ММ:СС + Границы)")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -124,29 +124,6 @@ def generate_exact_report(timing_rows, file_date):
     wb.save(output)
     return output.getvalue()
 
-def generate_filtered_mediaplan(uploaded_file_bytes):
-    """Удаляет из оригинального медиаплана все лишние колонки, сохраняя стили"""
-    wb = openpyxl.load_workbook(io.BytesIO(uploaded_file_bytes))
-    ws = wb.active
-    
-    # Удаляем ненужные столбцы справа налево, чтобы индексы не съезжали
-    if ws.max_column > 10:
-        ws.delete_cols(11, ws.max_column - 10)
-    ws.delete_cols(8, 2)  # Дни, Стоимость
-    ws.delete_cols(6, 1)  # Хроно
-    ws.delete_cols(4, 1)  # Документ
-    ws.delete_cols(1, 2)  # №, Позиция
-    
-    # Настраиваем оптимальную ширину для оставшихся колонок
-    ws.column_dimensions['A'].width = 15  # Время выхода
-    ws.column_dimensions['B'].width = 35  # Наименование ролика
-    ws.column_dimensions['C'].width = 15  # Длительность
-    ws.column_dimensions['D'].width = 12  # ID
-    
-    output = io.BytesIO()
-    wb.save(output)
-    return output.getvalue()
-
 def to_excel(df):
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -172,7 +149,6 @@ with st.sidebar:
 # --- Логика ---
 if uploaded_file:
     try:
-        file_bytes = uploaded_file.read()
         base_name = os.path.splitext(uploaded_file.name)[0]
         
         file_date = datetime.now().strftime("%Y-%m-%d")
@@ -180,7 +156,7 @@ if uploaded_file:
             if len(part) == 10 and part.count('.') == 2:
                 file_date = part
         
-        df = pd.read_excel(io.BytesIO(file_bytes), skiprows=6)
+        df = pd.read_excel(uploaded_file, skiprows=6)
         
         df_res = df.iloc[:, [2, 7, 9]].copy()
         df_res.columns = ['Block_Time', 'Dur', 'ID']
@@ -205,9 +181,11 @@ if uploaded_file:
                 file_name = f"{h:02d}-{hour_counts[h]}"
                 time_str = block_time.strftime('%H:%M:%S')
                 
+                # Логика замены 00 на 24 для отчета
                 report_hour = 24 if h == 0 else h
                 report_block_name = f"Реклама {report_hour}.{hour_counts[h]}"
                 
+                # Корректируем вывод времени для текстовых отчетов по ID
                 if h == 0:
                     display_time_str = f"24:{block_time.strftime('%M:%S')}"
                 else:
@@ -229,7 +207,7 @@ if uploaded_file:
                 txt_id_content.write(f"{display_time_str}\n{id_list_str}\n\n")
                 xlsx_id_data.append({"Время": display_time_str, "Список ID": id_list_str})
 
-                # XML SLBlock (Строка 244 полностью восстановлена и закрыта)
+                # XML SLBlock
                 xml = [
                     f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Image_using_type="Video files"\r\n      Sec="{total_block_dur:.3f}"\r\n      Include_subfolders="no"\r\n      Path=""\r\n      cptn_start_file=""\r\n      cptn_end_file=""\r\n      cptn_between_file=""\r\n      cptn_start_en="no"\r\n      cptn_end_en="no"\r\n      cptn_between_en="no"\r\n      Image_Duration="1.000">\r\n',
                     '      version 3\r\n',
@@ -247,7 +225,7 @@ if uploaded_file:
                 
                 zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
 
-        st.success(f"✅ Успешно сгенерировано!")
+        st.success(f"✅ Успешно обработано! Формат времени в отчете изменен на Ч:ММ:СС.")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -257,8 +235,6 @@ if uploaded_file:
         with col2:
             st.subheader("📊 Отчетность")
             st.download_button("📥 Визуальный Отчет Таймингов (.xlsx)", generate_exact_report(timing_rows_formatted, file_date), f"N4_Timings_{base_name}.xlsx")
-            st.download_button("📥 Очищенный Медиаплан (.xlsx)", generate_filtered_mediaplan(file_bytes), f"N4_Filtered_Plan_{base_name}.xlsx")
-            st.divider()
             st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_{base_name}.xlsx")
             st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
 
