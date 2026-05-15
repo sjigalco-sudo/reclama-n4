@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Счетчик блоков)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР ")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
