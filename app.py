@@ -6,7 +6,7 @@ import os
 from datetime import timedelta, datetime, time
 
 # Конфигурация страницы
-st.set_page_config(page_title="N4 | SLBlock & Timing Generator", page_icon="📺", layout="wide")
+st.set_page_config(page_title="N4 | Full Generator", page_icon="📺", layout="wide")
 
 # Кастомный стиль N4
 st.markdown('''
@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ГЕНЕРАТОР (SLBlock + Тайминги)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Blocks + IDs + Timings)")
 
 # --- Константы N4 ---
 DEFAULT_REKLAMA_PATH = r"D:\AIR\REKLAMA 2026"
@@ -79,7 +79,10 @@ if uploaded_file:
         df_res = df_res.dropna(subset=['ID'])
         
         grouped = df_res.groupby('Block_Time', sort=False)
+        
         zip_buffer = io.BytesIO()
+        txt_id_content = io.StringIO()
+        xlsx_id_data = []
         timing_data = []
         hour_counts = {}
         
@@ -88,21 +91,29 @@ if uploaded_file:
                 h = block_time.hour
                 hour_counts[h] = hour_counts.get(h, 0) + 1
                 file_name = f"{h:02d}-{hour_counts[h]}"
+                time_str = block_time.strftime('%H:%M:%S')
                 
                 soc_idx = ((i - 1) % 5) + 1
                 soc = SOCIAL_ADS[soc_idx]
                 
-                # Точный расчет: 5с + реклама + 5с + социалка
+                # Полная длительность (реклама + 20.440с заставок)
                 total_block_dur = PUB_DUR + items['Dur'].sum() + PUB_DUR + soc['dur']
                 
-                # Сохраняем данные для Excel отчета
+                # 1. Данные для Excel Таймингов
                 timing_data.append({
                     "Блок": file_name,
-                    "Время выхода": block_time.strftime('%H:%M:%S'),
+                    "Время выхода": time_str,
                     "Длительность (Ч:ММ:СС)": seconds_to_hms(total_block_dur)
                 })
 
-                # XML структура v3
+                # 2. Данные для отчетов по ID
+                id_list_raw = [str(row['ID']).split(".")[0] for _, row in items.iterrows()]
+                id_list_str = "".join([f'"{x}"' for x in id_list_raw])
+                
+                txt_id_content.write(f"{time_str}\n{id_list_str}\n\n")
+                xlsx_id_data.append({"Время": time_str, "Список ID": id_list_str})
+
+                # 3. XML структура SLBlock
                 xml = [
                     f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Image_using_type="Video files"\r\n      Sec="{total_block_dur:.3f}"\r\n      Include_subfolders="no"\r\n      Path=""\r\n      cptn_start_file=""\r\n      cptn_end_file=""\r\n      cptn_between_file=""\r\n      cptn_start_en="no"\r\n      cptn_end_en="no"\r\n      cptn_between_en="no"\r\n      Image_Duration="1.000">\r\n',
                     '      version 3\r\n',
@@ -120,21 +131,18 @@ if uploaded_file:
                 
                 zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
 
-        st.success(f"✅ Готово! Сформировано блоков: {len(timing_data)}")
+        st.success(f"✅ Обработка завершена! Блоков: {len(timing_data)}")
         
         col1, col2 = st.columns(2)
         with col1:
-            st.download_button(
-                label=f"📥 Скачать SLBlocks ({base_name})",
-                data=zip_buffer.getvalue(),
-                file_name=f"N4_Blocks_{base_name}.zip"
-            )
+            st.subheader("🚀 Эфирные файлы")
+            st.download_button(f"📥 SLBlocks ({base_name}).zip", zip_buffer.getvalue(), f"N4_Blocks_{base_name}.zip")
+        
         with col2:
-            st.download_button(
-                label=f"📥 Скачать Тайминги (.xlsx)",
-                data=to_excel(pd.DataFrame(timing_data)),
-                file_name=f"N4_Timings_{base_name}.xlsx"
-            )
+            st.subheader("📊 Отчетность")
+            st.download_button("📥 Тайминги Ч:ММ:СС (.xlsx)", to_excel(pd.DataFrame(timing_data)), f"N4_Timings_{base_name}.xlsx")
+            st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_{base_name}.xlsx")
+            st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
 
     except Exception as e:
         st.error(f"Ошибка: {e}")
