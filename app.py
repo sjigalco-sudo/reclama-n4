@@ -3,7 +3,7 @@ import pandas as pd
 import io
 import zipfile
 import os
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 # Конфигурация страницы
 st.set_page_config(page_title="N4 | Full Generator", page_icon="📺", layout="wide")
@@ -16,7 +16,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (V3 + Отчеты + Автосохранение)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР С ТОЧНЫМ ОТЧЕТОМ")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -48,8 +48,65 @@ def xml_escape(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 def seconds_to_hms(total_seconds):
-    td = timedelta(seconds=int(round(total_seconds)))
-    return str(td)
+    """Преобразует секунды в строгий формат ЧЧ:ММ:СС"""
+    total_secs = int(round(total_seconds))
+    h = total_secs // 3600
+    m = (total_secs % 3600) // 60
+    s = total_secs % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
+
+def make_styled_timing_excel(timing_rows, file_date):
+    """Генерирует Excel-отчет строго по шаблону пользователя"""
+    output = io.BytesIO()
+    
+    # Строим структуру как в файле пользователя
+    # Строка 0: Дата
+    # Строка 1: Канал (N4)
+    # Строка 5: Заголовок "Длительность рекламных блоков"
+    # Строка 6: Названия колонок
+    
+    data_dict = {
+        "": [
+            file_date, 
+            "N4", 
+            "", 
+            "", 
+            "", 
+            "Длительность рекламных блоков", 
+            "Длина ролика"
+        ],
+        " ": [
+            "", 
+            "", 
+            "", 
+            "", 
+            "", 
+            "", 
+            ""
+        ],
+        "  ": [
+            "", 
+            "", 
+            "", 
+            "", 
+            "", 
+            "", 
+            "Название блока"
+        ]
+    }
+    
+    # Добавляем данные блоков
+    for row in timing_rows:
+        data_dict[""].append(row["dur"])
+        data_dict[" "].append("")
+        data_dict["  "].append(row["name"])
+        
+    df_template = pd.DataFrame(data_dict)
+    
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_template.to_excel(writer, index=False, header=False)
+        
+    return output.getvalue()
 
 def to_excel(df):
     output = io.BytesIO()
@@ -73,10 +130,14 @@ with st.sidebar:
     st.divider()
     uploaded_file = st.file_uploader("Загрузите медиаплан", type=["xls", "xlsx"])
 
-# --- Обработка ---
+# --- Логика ---
 if uploaded_file:
     try:
         base_name = os.path.splitext(uploaded_file.name)[0]
+        
+        # Попробуем вытащить дату из оригинального плана (обычно в шапке) или возьмем текущую
+        file_date = datetime.now().strftime("%Y-%m-%d")
+        
         df = pd.read_excel(uploaded_file, skiprows=6)
         
         # Колонки: 2 (Время), 7 (Длительность), 9 (ID)
@@ -92,37 +153,41 @@ if uploaded_file:
         zip_buffer = io.BytesIO()
         txt_id_content = io.StringIO()
         xlsx_id_data = []
-        timing_data = []
+        timing_rows_formatted = [] # Для нового красивого отчета
         hour_counts = {}
         
         with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
             for i, (block_time, items) in enumerate(grouped, 1):
                 h = block_time.hour
                 hour_counts[h] = hour_counts.get(h, 0) + 1
+                
+                # Имена для файлов по-прежнему технические (06-1.slblock)
                 file_name = f"{h:02d}-{hour_counts[h]}"
                 time_str = block_time.strftime('%H:%M:%S')
                 
+                # Имя для отчета в формате "Реклама 6.1"
+                report_block_name = f"Реклама {h}.{hour_counts[h]}"
+                
                 soc = SOCIAL_ADS[((i - 1) % 5) + 1]
                 
-                # Расчет длительности по факту (план + заставки)
+                # Расчет полной длительности блока (план + заставки)
                 pure_ads_seconds = items['Dur'].sum()
                 total_block_dur = PUB_DUR + pure_ads_seconds + PUB_DUR + soc['dur']
                 
-                # 1. Данные для Таймингов
-                timing_data.append({
-                    "Блок": file_name,
-                    "Время (план)": time_str,
-                    "Длительность (Ч:ММ:СС)": seconds_to_hms(total_block_dur)
+                # Сохраняем в список для красивого Excel по твоему шаблону
+                timing_rows_formatted.append({
+                    "dur": seconds_to_hms(total_block_dur),
+                    "name": report_block_name
                 })
 
-                # 2. Данные для списков ID
+                # Сохраняем данные для списков ID
                 id_list_raw = [str(row['ID']).split(".")[0] for _, row in items.iterrows()]
                 id_list_str = "".join([f'"{x}"' for x in id_list_raw])
                 
                 txt_id_content.write(f"{time_str}\n{id_list_str}\n\n")
                 xlsx_id_data.append({"Время": time_str, "Список ID": id_list_str})
 
-                # 3. XML SLBlock
+                # XML SLBlock
                 xml = [
                     f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Image_using_type="Video files"\r\n      Sec="{total_block_dur:.3f}"\r\n      Include_subfolders="no"\r\n      Path=""\r\n      cptn_start_file=""\r\n      cptn_end_file=""\r\n      cptn_between_file=""\r\n      cptn_start_en="no"\r\n      cptn_end_en="no"\r\n      cptn_between_en="no"\r\n      Image_Duration="1.000">\r\n',
                     '      version 3\r\n',
@@ -140,7 +205,7 @@ if uploaded_file:
                 
                 zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
 
-        st.success(f"✅ Готово! Сгенерировано блоков: {len(timing_data)}")
+        st.success(f"✅ Готово! Сформировано блоков: {len(timing_rows_formatted)}")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -149,7 +214,8 @@ if uploaded_file:
         
         with col2:
             st.subheader("📊 Отчетность")
-            st.download_button("📥 Тайминги Ч:ММ:СС (.xlsx)", to_excel(pd.DataFrame(timing_data)), f"N4_Timings_{base_name}.xlsx")
+            # Выдача нового отчета по шаблону
+            st.download_button("📥 Скачать Тайминги (по шаблону .xlsx)", make_styled_timing_excel(timing_rows_formatted, file_date), f"N4_Timings_{base_name}.xlsx")
             st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_{base_name}.xlsx")
             st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
 
