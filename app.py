@@ -5,7 +5,7 @@ import zipfile
 import os
 from datetime import timedelta
 
-# Конфигурация
+# Конфигурация страницы
 st.set_page_config(page_title="N4 | Full Generator", page_icon="📺", layout="wide")
 
 st.markdown('''
@@ -16,9 +16,9 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ИСПРАВЛЕННЫЙ ГЕНЕРАТОР")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (V3 + Отчеты + Автосохранение)")
 
-# --- Константы и БД ---
+# --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
 PUB_FILE = "PUBLICITATE_HD.mp4"
 PUB_DUR = 5.000
@@ -51,6 +51,12 @@ def seconds_to_hms(total_seconds):
     td = timedelta(seconds=int(round(total_seconds)))
     return str(td)
 
+def to_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False)
+    return output.getvalue()
+
 # --- Sidebar ---
 with st.sidebar:
     st.header("⚙️ Настройки")
@@ -62,8 +68,9 @@ with st.sidebar:
     mp4_ids = [x.strip() for x in current_input.split(",") if x.strip()]
     if sorted(mp4_ids) != sorted(saved_mp4):
         saved_mp4 = save_mp4_ids(mp4_ids)
-        st.toast("💾 База MP4 обновлена!")
+        st.toast("💾 База MP4 сохранена!")
 
+    st.divider()
     uploaded_file = st.file_uploader("Загрузите медиаплан", type=["xls", "xlsx"])
 
 # --- Обработка ---
@@ -72,11 +79,10 @@ if uploaded_file:
         base_name = os.path.splitext(uploaded_file.name)[0]
         df = pd.read_excel(uploaded_file, skiprows=6)
         
-        # Берем Колонку 2 (Время), 7 (Длительность), 9 (ID)
+        # Колонки: 2 (Время), 7 (Длительность), 9 (ID)
         df_res = df.iloc[:, [2, 7, 9]].copy()
         df_res.columns = ['Block_Time', 'Dur', 'ID']
         
-        # Наполняем пустые ячейки времени (FFILL)
         df_res['Block_Time'] = pd.to_datetime(df_res['Block_Time'], format='%H:%M:%S', errors='coerce').dt.time
         df_res['Block_Time'] = df_res['Block_Time'].ffill()
         df_res = df_res.dropna(subset=['ID'])
@@ -84,6 +90,8 @@ if uploaded_file:
         grouped = df_res.groupby('Block_Time', sort=False)
         
         zip_buffer = io.BytesIO()
+        txt_id_content = io.StringIO()
+        xlsx_id_data = []
         timing_data = []
         hour_counts = {}
         
@@ -92,22 +100,29 @@ if uploaded_file:
                 h = block_time.hour
                 hour_counts[h] = hour_counts.get(h, 0) + 1
                 file_name = f"{h:02d}-{hour_counts[h]}"
+                time_str = block_time.strftime('%H:%M:%S')
                 
                 soc = SOCIAL_ADS[((i - 1) % 5) + 1]
                 
-                # ВАЖНО: Считаем длительность на основе суммы Dur из медиаплана
-                # Плюс реальные длительности заставок
+                # Расчет длительности по факту (план + заставки)
                 pure_ads_seconds = items['Dur'].sum()
                 total_block_dur = PUB_DUR + pure_ads_seconds + PUB_DUR + soc['dur']
                 
-                # Данные для Excel отчета
+                # 1. Данные для Таймингов
                 timing_data.append({
                     "Блок": file_name,
-                    "Время (план)": block_time.strftime('%H:%M:%S'),
+                    "Время (план)": time_str,
                     "Длительность (Ч:ММ:СС)": seconds_to_hms(total_block_dur)
                 })
 
-                # Формируем XML (UTF-16)
+                # 2. Данные для списков ID
+                id_list_raw = [str(row['ID']).split(".")[0] for _, row in items.iterrows()]
+                id_list_str = "".join([f'"{x}"' for x in id_list_raw])
+                
+                txt_id_content.write(f"{time_str}\n{id_list_str}\n\n")
+                xlsx_id_data.append({"Время": time_str, "Список ID": id_list_str})
+
+                # 3. XML SLBlock
                 xml = [
                     f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Image_using_type="Video files"\r\n      Sec="{total_block_dur:.3f}"\r\n      Include_subfolders="no"\r\n      Path=""\r\n      cptn_start_file=""\r\n      cptn_end_file=""\r\n      cptn_between_file=""\r\n      cptn_start_en="no"\r\n      cptn_end_en="no"\r\n      cptn_between_en="no"\r\n      Image_Duration="1.000">\r\n',
                     '      version 3\r\n',
@@ -125,16 +140,18 @@ if uploaded_file:
                 
                 zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
 
-        st.success(f"✅ Готово! Параметр Sec в slblock теперь равен сумме длин роликов.")
+        st.success(f"✅ Готово! Сгенерировано блоков: {len(timing_data)}")
         
-        # Кнопки скачивания
-        st.download_button(f"📥 Скачать SLBlocks ({base_name})", zip_buffer.getvalue(), f"N4_Blocks_{base_name}.zip")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("🚀 Эфирные файлы")
+            st.download_button(f"📥 SLBlocks ({base_name}).zip", zip_buffer.getvalue(), f"N4_Blocks_{base_name}.zip")
         
-        df_timing = pd.DataFrame(timing_data)
-        output_ex = io.BytesIO()
-        with pd.ExcelWriter(output_ex, engine='openpyxl') as writer:
-            df_timing.to_excel(writer, index=False)
-        st.download_button("📥 Скачать Тайминги (.xlsx)", output_ex.getvalue(), f"N4_Timings_{base_name}.xlsx")
+        with col2:
+            st.subheader("📊 Отчетность")
+            st.download_button("📥 Тайминги Ч:ММ:СС (.xlsx)", to_excel(pd.DataFrame(timing_data)), f"N4_Timings_{base_name}.xlsx")
+            st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_{base_name}.xlsx")
+            st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
 
     except Exception as e:
         st.error(f"Ошибка: {e}")
