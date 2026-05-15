@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side
-from weasyprint import HTML
+from fpdf import FPDF
 
 # Конфигурация страницы
 st.set_page_config(page_title="N4 | Full Generator", page_icon="📺", layout="wide")
@@ -19,7 +19,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Добавлен экспорт в PDF)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Стабильный PDF через FPDF2)")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -58,11 +58,9 @@ def seconds_to_hms_custom(total_seconds):
     return f"{h}:{m:02d}:{s:02d}"
 
 def generate_exact_report(timing_rows, file_date):
-    """Создает Excel-файл с точным воссозданием разметки, шрифтов и обрамления таблиц"""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Лист1"
-    
     ws.views.sheetView[0].showGridLines = True
     
     font_regular = Font(name="Calibri", size=11)
@@ -75,7 +73,6 @@ def generate_exact_report(timing_rows, file_date):
     
     ws["E1"] = file_date
     ws["E1"].font = font_regular
-    
     ws["E2"] = "N4"
     ws["E2"].font = font_bold
     
@@ -91,7 +88,6 @@ def generate_exact_report(timing_rows, file_date):
     ws["E7"].font = font_bold
     ws["E7"].alignment = align_center
     ws["E7"].border = table_border
-    
     ws["D7"].border = table_border 
     
     current_row = 9
@@ -100,14 +96,12 @@ def generate_exact_report(timing_rows, file_date):
         ws[f"C{current_row}"].font = font_regular
         ws[f"C{current_row}"].alignment = align_center
         ws[f"C{current_row}"].border = table_border
-        
         ws[f"D{current_row}"].border = table_border
         
         ws[f"E{current_row}"] = row["name"]
         ws[f"E{current_row}"].font = font_regular
         ws[f"E{current_row}"].alignment = align_left
         ws[f"E{current_row}"].border = table_border
-        
         current_row += 1
         
     ws.column_dimensions['A'].width = 3
@@ -121,7 +115,6 @@ def generate_exact_report(timing_rows, file_date):
     return output.getvalue()
 
 def generate_filtered_mediaplan(uploaded_file_bytes):
-    """Удаляет из оригинального медиаплана все лишние колонки, сохраняя Excel-стиль"""
     wb = openpyxl.load_workbook(io.BytesIO(uploaded_file_bytes))
     ws = wb.active
     
@@ -141,9 +134,42 @@ def generate_filtered_mediaplan(uploaded_file_bytes):
     wb.save(output)
     return output.getvalue()
 
+class PDFPlan(FPDF):
+    def __init__(self, file_date):
+        super().__init__()
+        self.file_date = file_date
+
+    def header(self):
+        # Настройка шрифта с поддержкой кириллицы (используем стандартный встроенный Helvetica/Arial рендеринг Core-шрифтов)
+        self.set_font('helvetica', 'B', 16)
+        self.cell(0, 10, 'Media Plan - N4 Channel', ln=1, align='L')
+        self.set_font('helvetica', '', 11)
+        self.cell(0, 8, f'Air Date: {self.file_date}', ln=1, align='L')
+        self.line(10, 28, 200, 28)
+        self.ln(5)
+
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('helvetica', 'I', 9)
+        self.cell(0, 10, f'Page {self.page_no()}', align='R')
+
 def generate_filtered_mediaplan_pdf(uploaded_file_bytes, file_date):
-    """Парсит данные и формирует чистый, структурированный PDF медиаплана"""
+    """Генерирует PDF без использования тяжелых внешних Linux-библиотек"""
     df = pd.read_excel(io.BytesIO(uploaded_file_bytes), skiprows=6)
     
-    # Оставляем нужные колонки по индексам
-    df_
+    df_res = df.iloc[:, [2, 4, 7, 9]].copy()
+    df_res.columns = ['Time', 'Title', 'Dur', 'ID']
+    df_res['Time'] = pd.to_datetime(df_res['Time'], format='%H:%M:%S', errors='coerce').dt.time
+    df_res['Time'] = df_res['Time'].ffill()
+    df_res = df_res.dropna(subset=['ID'])
+    
+    pdf = PDFPlan(file_date)
+    pdf.add_page()
+    
+    # Шапка таблицы
+    pdf.set_font('helvetica', 'B', 10)
+    pdf.set_fill_color(240, 242, 245)
+    
+    pdf.cell(30, 8, 'Block Time', border=1, align='C', fill=True)
+    pdf.cell(95, 8, 'Spot Title', border=1, align='L', fill=True)
+    pdf.cell(35, 8, 'Duration
