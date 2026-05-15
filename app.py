@@ -4,6 +4,8 @@ import io
 import zipfile
 import os
 from datetime import timedelta, datetime
+import openpyxl
+from openpyxl.styles import Font, Alignment
 
 # Конфигурация страницы
 st.set_page_config(page_title="N4 | Full Generator", page_icon="📺", layout="wide")
@@ -16,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР С ТОЧНЫМ ОТЧЕТОМ")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Точный Визуальный Отчет)")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -48,64 +50,71 @@ def xml_escape(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 def seconds_to_hms(total_seconds):
-    """Преобразует секунды в строгий формат ЧЧ:ММ:СС"""
+    """Преобразует секунды в формат ЧЧ:ММ:СС"""
     total_secs = int(round(total_seconds))
     h = total_secs // 3600
     m = (total_secs % 3600) // 60
     s = total_secs % 60
     return f"{h:02d}:{m:02d}:{s:02d}"
 
-def make_styled_timing_excel(timing_rows, file_date):
-    """Генерирует Excel-отчет строго по шаблону пользователя"""
-    output = io.BytesIO()
+def generate_exact_report(timing_rows, file_date):
+    """Создает Excel-файл, полностью копируя визуальную структуру оригинала"""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Лист1"
     
-    # Строим структуру как в файле пользователя
-    # Строка 0: Дата
-    # Строка 1: Канал (N4)
-    # Строка 5: Заголовок "Длительность рекламных блоков"
-    # Строка 6: Названия колонок
+    # Включаем сетку (опционально, можно выключить: ws.views.sheetView[0].showGridLines = False)
+    ws.views.sheetView[0].showGridLines = True
     
-    data_dict = {
-        "": [
-            file_date, 
-            "N4", 
-            "", 
-            "", 
-            "", 
-            "Длительность рекламных блоков", 
-            "Длина ролика"
-        ],
-        " ": [
-            "", 
-            "", 
-            "", 
-            "", 
-            "", 
-            "", 
-            ""
-        ],
-        "  ": [
-            "", 
-            "", 
-            "", 
-            "", 
-            "", 
-            "", 
-            "Название блока"
-        ]
-    }
+    # Стили
+    font_regular = Font(name="Calibri", size=11)
+    font_bold = Font(name="Calibri", size=11, bold=True)
+    align_center = Alignment(horizontal="center", vertical="center")
+    align_left = Alignment(horizontal="left", vertical="center")
     
-    # Добавляем данные блоков
+    # 1. Шапка отчета (строки 1 и 2 в колонке E)
+    ws["E1"] = file_date
+    ws["E1"].font = font_regular
+    
+    ws["E2"] = "N4"
+    ws["E2"].font = font_bold
+    
+    # 2. Заголовок таблицы (строка 6, колонка D)
+    ws["D6"] = "Длительность рекламных блоков"
+    ws["D6"].font = font_bold
+    
+    # 3. Названия колонок (строка 7)
+    ws["C7"] = "Длина ролика"
+    ws["C7"].font = font_bold
+    ws["C7"].alignment = align_center
+    
+    ws["E7"] = "Название блока"
+    ws["E7"].font = font_bold
+    ws["E7"].alignment = align_center
+    
+    # 4. Заполнение данными (начиная со строки 9)
+    current_row = 9
     for row in timing_rows:
-        data_dict[""].append(row["dur"])
-        data_dict[" "].append("")
-        data_dict["  "].append(row["name"])
+        ws[f"C{current_row}"] = row["dur"]
+        ws[f"C{current_row}"].font = font_regular
+        ws[f"C{current_row}"].alignment = align_center
         
-    df_template = pd.DataFrame(data_dict)
+        ws[f"E{current_row}"] = row["name"]
+        ws[f"E{current_row}"].font = font_regular
+        ws[f"E{current_row}"].alignment = align_left
+        
+        current_row += 1
+        
+    # Выставляем красивую ширину столбцов, чтобы текст не влезал на соседние ячейки
+    ws.column_dimensions['A'].width = 3
+    ws.column_dimensions['B'].width = 3
+    ws.column_dimensions['C'].width = 16  # Для таймингов "00:06:15"
+    ws.column_dimensions['D'].width = 5   # Пустой разделитель
+    ws.column_dimensions['E'].width = 18  # Для названий "Реклама 6.1"
     
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df_template.to_excel(writer, index=False, header=False)
-        
+    # Сохраняем в байтовый поток
+    output = io.BytesIO()
+    wb.save(output)
     return output.getvalue()
 
 def to_excel(df):
@@ -135,8 +144,12 @@ if uploaded_file:
     try:
         base_name = os.path.splitext(uploaded_file.name)[0]
         
-        # Попробуем вытащить дату из оригинального плана (обычно в шапке) или возьмем текущую
+        # Пробуем автоматически достать дату из названия файла (например, "publicitate 17.05.2026")
+        # Если в названии есть дата, запишем её, иначе текущую дату на компьютере
         file_date = datetime.now().strftime("%Y-%m-%d")
+        for part in base_name.split():
+            if len(part) == 10 and part.count('.') == 2:
+                file_date = part  # Найдена дата формата ДД.ММ.ГГГГ
         
         df = pd.read_excel(uploaded_file, skiprows=6)
         
@@ -153,7 +166,7 @@ if uploaded_file:
         zip_buffer = io.BytesIO()
         txt_id_content = io.StringIO()
         xlsx_id_data = []
-        timing_rows_formatted = [] # Для нового красивого отчета
+        timing_rows_formatted = []
         hour_counts = {}
         
         with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
@@ -161,26 +174,20 @@ if uploaded_file:
                 h = block_time.hour
                 hour_counts[h] = hour_counts.get(h, 0) + 1
                 
-                # Имена для файлов по-прежнему технические (06-1.slblock)
                 file_name = f"{h:02d}-{hour_counts[h]}"
                 time_str = block_time.strftime('%H:%M:%S')
-                
-                # Имя для отчета в формате "Реклама 6.1"
                 report_block_name = f"Реклама {h}.{hour_counts[h]}"
                 
                 soc = SOCIAL_ADS[((i - 1) % 5) + 1]
                 
-                # Расчет полной длительности блока (план + заставки)
                 pure_ads_seconds = items['Dur'].sum()
                 total_block_dur = PUB_DUR + pure_ads_seconds + PUB_DUR + soc['dur']
                 
-                # Сохраняем в список для красивого Excel по твоему шаблону
                 timing_rows_formatted.append({
                     "dur": seconds_to_hms(total_block_dur),
                     "name": report_block_name
                 })
 
-                # Сохраняем данные для списков ID
                 id_list_raw = [str(row['ID']).split(".")[0] for _, row in items.iterrows()]
                 id_list_str = "".join([f'"{x}"' for x in id_list_raw])
                 
@@ -205,7 +212,7 @@ if uploaded_file:
                 
                 zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
 
-        st.success(f"✅ Готово! Сформировано блоков: {len(timing_rows_formatted)}")
+        st.success(f"✅ Успешно обработано! Файлы готовы.")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -214,8 +221,8 @@ if uploaded_file:
         
         with col2:
             st.subheader("📊 Отчетность")
-            # Выдача нового отчета по шаблону
-            st.download_button("📥 Скачать Тайминги (по шаблону .xlsx)", make_styled_timing_excel(timing_rows_formatted, file_date), f"N4_Timings_{base_name}.xlsx")
+            # Кнопка отчета в оригинальном стиле
+            st.download_button("📥 Визуальный Отчет Таймингов (.xlsx)", generate_exact_report(timing_rows_formatted, file_date), f"N4_Timings_{base_name}.xlsx")
             st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_{base_name}.xlsx")
             st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
 
