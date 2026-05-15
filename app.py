@@ -3,129 +3,115 @@ import pandas as pd
 import io
 import zipfile
 import os
-from datetime import timedelta, datetime, time
 
-# Конфигурация страницы
-st.set_page_config(page_title="N4 | ID Only Generator", page_icon="📺", layout="wide")
+# --- КОНСТАНТЫ N4 ---
+DEFAULT_REKLAMA_PATH = r"D:\AIR\REKLAMA 2026"
+DEFAULT_SOCIAL_PATH = r"D:\AIR\REKLAMA 2025"
 
-# Кастомный стиль N4
-st.markdown('''
-    <style>
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #E11D48; color: white; border: none; }
-    .stDownloadButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #2563EB; color: white; border: none; }
-    h1 { color: #E11D48; border-bottom: 2px solid #E11D48; padding-bottom: 10px; }
-    </style>
-    ''', unsafe_allow_html=True)
+PUB_FILE = "PUBLICITATE_HD.mp4"
+PUB_DUR = 5.000
 
-st.title("📺 N4: ГЕНЕРАТОР (SLblock+ID+Тайминг)")
+SOCIAL_ADS = {
+    1: {"file": "1_APA_HD.mpg", "dur": 10.440},
+    2: {"file": "2_FRUCTE_HD.mpg", "dur": 10.440},
+    3: {"file": "3_MESE HD.mpg", "dur": 10.440},
+    4: {"file": "4_MISCARE_HD.mpg", "dur": 10.440},
+    5: {"file": "5_SARE_HD.mpg", "dur": 10.440}
+}
 
-# --- Вспомогательные функции ---
-def format_time_hh_mm(x):
-    if isinstance(x, (datetime, time)): return x.strftime('%H-%M')
-    if isinstance(x, (int, float)):
-        total_seconds = int(round(x * 86400))
-        return str(timedelta(seconds=total_seconds)).zfill(8)[:5].replace(':', '-')
-    return str(x)[:5].replace(':', '-')
-
-def format_time_full(x):
-    if isinstance(x, (datetime, time)): return x.strftime('%H:%M:%S')
-    if isinstance(x, (int, float)):
-        total_seconds = int(round(x * 86400))
-        return str(timedelta(seconds=total_seconds)).zfill(8)
-    return str(x)
-
-def seconds_to_hms(total_seconds):
-    return str(timedelta(seconds=int(round(total_seconds)))).zfill(8)
+def inject_custom_css():
+    st.markdown("""
+        <style>
+        .main { background-color: #0d1117; }
+        h1 { color: #e6edf3; font-weight: 700; border-bottom: 2px solid #30363d; padding-bottom: 10px; }
+        section[data-testid="stSidebar"] { background-color: #161b22 !important; border-right: 1px solid #30363d; }
+        .stButton>button { width: 100%; border-radius: 6px; background-color: #21262d; color: #c9d1d9; }
+        .stDownloadButton>button { width: 100%; background-color: #238636 !important; color: white !important; font-weight: 700; }
+        div[data-testid="stExpander"], .stFileUploader { border: 1px solid #30363d; border-radius: 8px; background-color: #0d1117; }
+        </style>
+    """, unsafe_allow_html=True)
 
 def xml_escape(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
-def to_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False)
-    return output.getvalue()
+st.set_page_config(page_title="N4 Generator", page_icon="📺", layout="wide")
+inject_custom_css()
 
-# --- Sidebar ---
+st.markdown("<h1 style='text-align: center;'>N4: ГЕНЕРАТОР РЕКЛАМНЫХ БЛОКОВ</h1>", unsafe_allow_html=True)
+
 with st.sidebar:
-    st.header("⚙️ Настройки N4")
-    user_path = st.text_input("Путь к роликам на сервере:", value=r"I:\RECLAMA 2026")
+    st.markdown("### ⚙️ НАСТРОЙКА ПУТЕЙ")
+    path_ads = st.text_input("Путь к роликам (REKLAMA 2026):", value=DEFAULT_REKLAMA_PATH)
+    path_soc = st.text_input("Путь к отбивкам (REKLAMA 2025):", value=DEFAULT_SOCIAL_PATH)
     st.divider()
-    uploaded_file = st.file_uploader("Загрузите медиа-план (Excel)", type=["xls", "xlsx"])
-    
-    if user_path.endswith('\\'):
-        user_path = user_path[:-1]
+    uploaded_file = st.file_uploader("Загрузите план N4 (XLSX)", type=["xlsx"])
 
-# --- Основная логика ---
 if uploaded_file:
     try:
-        base_name = os.path.splitext(uploaded_file.name)[0]
+        source_name = os.path.splitext(uploaded_file.name)[0]
         df = pd.read_excel(uploaded_file, skiprows=6)
-        
-        # Колонки: Время(2), Название(6), Длит(7), ID(9)
         df_res = df.iloc[:, [2, 6, 7, 9]].copy()
-        df_res.columns = ['Block_Time', 'Name', 'Dur', 'ID']
-        df_res['Block_Time'] = df_res['Block_Time'].ffill()
+        df_res.columns = ['Time', 'Name', 'Dur', 'ID']
+        
+        # Обработка времени
+        df_res['Time'] = pd.to_datetime(df_res['Time'], format='%H:%M:%S', errors='coerce').dt.time
+        df_res['Time'] = df_res['Time'].ffill()
         df_res = df_res.dropna(subset=['ID'])
-        
-        grouped = df_res.groupby('Block_Time', sort=False)
-        
-        zip_slblock_buffer = io.BytesIO()
-        txt_id_content = io.StringIO()
-        xlsx_id_data = []
-        xlsx_timing_data = []
-        
-        with zipfile.ZipFile(zip_slblock_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-            for i, (block_time, items) in enumerate(grouped, 1):
-                time_filename = format_time_hh_mm(block_time)
-                time_label = format_time_full(block_time)
+
+        zip_buffer = io.BytesIO()
+        summary_data = []
+
+        # Словари для отслеживания порядкового номера блока в часе
+        hour_counts = {}
+
+        with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+            # Считаем блоки и группируем
+            groups = df_res.groupby('Time', sort=False)
+            
+            for i, (block_time, items) in enumerate(groups, 1):
+                # Определяем час и номер блока в этом часе
+                h = block_time.hour
+                hour_counts[h] = hour_counts.get(h, 0) + 1
+                file_name_slblock = f"{h}-{hour_counts[h]}" # Название типа 6-1, 6-2
                 
-                # 1. ГЕНЕРАЦИЯ SLBLOCK (БЕЗ НАЗВАНИЙ, ТОЛЬКО ID)
-                total_dur_pure = items['Dur'].sum()
-                xml_lines = [
-                    f'<slblock Source="list" Type="accurate" Sec="{total_dur_pure:.3f}" Include_subfolders="no" Path="" cptn_start_file="" cptn_end_file="" cptn_between_file="" cptn_start_en="no" cptn_end_en="no" cptn_between_en="no">version 2'
+                # Цикл социалки 1-5
+                soc_idx = ((i - 1) % 5) + 1
+                soc = SOCIAL_ADS[soc_idx]
+
+                total_sec = PUB_DUR + items['Dur'].sum() + PUB_DUR + soc['dur']
+                
+                xml = [
+                    f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Image_using_type="Video files"\r\n      Sec="{total_sec:.3f}"\r\n      Include_subfolders="no"\r\n      Path=""\r\n      cptn_start_file=""\r\n      cptn_end_file=""\r\n      cptn_between_file=""\r\n      cptn_start_en="no"\r\n      cptn_end_en="no"\r\n      cptn_between_en="no"\r\n      Image_Duration="1.000">\r\n',
+                    '      version 3\r\n',
+                    f'      <item\r\n            file="{xml_escape(path_soc)}\\{PUB_FILE}"\r\n            in="0.000"\r\n            dur="{PUB_DUR:.3f}"/>\r\n'
                 ]
-                
-                for _, row in items.iterrows():
-                    id_clean = str(row['ID']).split(".")[0]
-                    # Название (nm) больше не используем в пути файла
-                    nm_for_report = str(row['Name']).strip()
-                    
-                    # Проверяем расширение в названии, но путь строим только из ID
-                    ext = "" if any(nm_for_report.lower().endswith(e) for e in ['.mov', '.mp4', '.tga', '.mpg']) else ".mov"
-                    
-                    # Файл теперь называется [ID][Расширение]
-                    full_path = f"{user_path}\\{id_clean}{ext}"
-                    xml_lines.append(f'  <item file="{xml_escape(full_path)}" in="0.000" dur="{float(row["Dur"]):.3f}" />')
-                
-                xml_lines.append('</slblock>')
-                zip_file.writestr(f"{time_filename}.slblock", "\r\n".join(xml_lines).encode('utf-16'))
 
-                # 2. СБОР ID ДЛЯ ОТЧЕТОВ (ЗДЕСЬ НАЗВАНИЯ МОЖНО ОСТАВИТЬ В ТАБЛИЦЕ ДЛЯ ПРЕДПРОСМОТРА)
-                id_list_str = "".join([f'"{str(row["ID"]).split(".")[0]}"' for _, row in items.iterrows()])
-                txt_id_content.write(f"{time_label}\n{id_list_str}\n\n")
-                xlsx_id_data.append({"Время выхода": time_label, "Список ID": id_list_str})
-                
-                # 3. ТАЙМИНГИ (+20с)
-                xlsx_timing_data.append({
-                    "Время выхода блока": time_label, 
-                    "Длительность (+20с)": seconds_to_hms(total_dur_pure + 20.0)
-                })
+                for _, r in items.iterrows():
+                    raw_id = str(r['ID']).split(".")[0]
+                    # Проверка расширения
+                    ext = ".mp4" if ".mp4" in str(r['ID']).lower() else ".mov"
+                    xml.append(f'      <item\r\n            file="{xml_escape(path_ads)}\\{raw_id}{ext}"\r\n            in="0.000"\r\n            dur="{float(r["Dur"]):.3f}"/>\r\n')
 
-        st.success(f"✅ Файлы для N4 созданы (только ID). Путь в эфире: {user_path}")
+                xml.append(f'      <item\r\n            file="{xml_escape(path_soc)}\\{PUB_FILE}"\r\n            in="0.000"\r\n            dur="{PUB_DUR:.3f}"/>\r\n')
+                xml.append(f'      <item\r\n            file="{xml_escape(path_soc)}\\{soc["file"]}"\r\n            in="0.000"\r\n            dur="{soc["dur"]:.3f}"/>\r\n')
+                xml.append('</slblock>')
+
+                # Сохраняем файл с именем "Час-Номер"
+                zip_file.writestr(f"{file_name_slblock}.slblock", "".join(xml).encode('utf-16'))
+                summary_data.append([file_name_slblock, block_time.strftime('%H:%M'), f"{total_sec:.3f}"])
+
+        st.success(f"Готово! Файлы пронумерованы по часам.")
         
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("🚀 Эфир (Чистые ID)")
-            st.download_button(f"📥 SLBlocks {base_name}.zip", zip_slblock_buffer.getvalue(), f"N4_SLBLOCKS_{base_name}.zip")
-        
-        with col2:
-            st.subheader("📊 Отчеты")
-            st.download_button(f"📥 IDs (.txt) - {base_name}", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
-            st.download_button(f"📥 IDs (.xlsx) - {base_name}", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_{base_name}.xlsx")
-            st.download_button(f"📥 Тайминги - {base_name}", to_excel(pd.DataFrame(xlsx_timing_data)), f"N4_Timings_{base_name}.xlsx")
+        if summary_data:
+            with st.expander("📝 Список блоков в архиве", expanded=True):
+                st.table(pd.DataFrame(summary_data, columns=["Имя файла", "Время эфира", "Длительность (сек)"]))
+
+        st.download_button(
+            label=f"📥 СКАЧАТЬ N4_{source_name}.zip",
+            data=zip_buffer.getvalue(),
+            file_name=f"N4_{source_name}.zip",
+            mime="application/zip"
+        )
 
     except Exception as e:
         st.error(f"Ошибка: {e}")
-else:
-    st.info("👈 Загрузите медиа-план Excel.")
