@@ -3,9 +3,9 @@ import pandas as pd
 import io
 import zipfile
 import os
-from datetime import timedelta, datetime
+from datetime import datetime
 import openpyxl
-from openpyxl.styles import Font, Alignment
+from openpyxl.styles import Font, Alignment, Border, Side
 
 # Конфигурация страницы
 st.set_page_config(page_title="N4 | Full Generator", page_icon="📺", layout="wide")
@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Точный Визуальный Отчет)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Точная копия таблицы с границами)")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -50,7 +50,6 @@ def xml_escape(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 def seconds_to_hms(total_seconds):
-    """Преобразует секунды в формат ЧЧ:ММ:СС"""
     total_secs = int(round(total_seconds))
     h = total_secs // 3600
     m = (total_secs % 3600) // 60
@@ -58,61 +57,77 @@ def seconds_to_hms(total_seconds):
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 def generate_exact_report(timing_rows, file_date):
-    """Создает Excel-файл, полностью копируя визуальную структуру оригинала"""
+    """Создает Excel-файл с точным воссозданием разметки, шрифтов и обрамления таблиц"""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Лист1"
     
-    # Включаем сетку (опционально, можно выключить: ws.views.sheetView[0].showGridLines = False)
+    # Показываем сетку листа Excel
     ws.views.sheetView[0].showGridLines = True
     
-    # Стили
+    # Определение стилей
     font_regular = Font(name="Calibri", size=11)
     font_bold = Font(name="Calibri", size=11, bold=True)
     align_center = Alignment(horizontal="center", vertical="center")
     align_left = Alignment(horizontal="left", vertical="center")
     
-    # 1. Шапка отчета (строки 1 и 2 в колонке E)
+    # Стиль тонкой черной границы для таблицы
+    thin_side = Side(border_style="thin", color="000000")
+    table_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    
+    # 1. Шапка (Дата и Канал в столбце E)
     ws["E1"] = file_date
     ws["E1"].font = font_regular
     
     ws["E2"] = "N4"
     ws["E2"].font = font_bold
     
-    # 2. Заголовок таблицы (строка 6, колонка D)
+    # 2. Заголовок над таблицей (строка 6, колонка D)
     ws["D6"] = "Длительность рекламных блоков"
     ws["D6"].font = font_bold
     
-    # 3. Названия колонок (строка 7)
+    # 3. Шапка таблицы (строка 7) с обрамлением
     ws["C7"] = "Длина ролика"
     ws["C7"].font = font_bold
     ws["C7"].alignment = align_center
+    ws["C7"].border = table_border
     
     ws["E7"] = "Название блока"
     ws["E7"].font = font_bold
     ws["E7"].alignment = align_center
+    ws["E7"].border = table_border
     
-    # 4. Заполнение данными (начиная со строки 9)
+    # Добавим пустую ячейку D7 в рамку, если в оригинале строка 7 обрамлена полностью
+    ws["D7"].border = table_border 
+    
+    # 4. Заполнение данными и отрисовка границ ячеек (с 9-й строки)
     current_row = 9
     for row in timing_rows:
+        # Ячейка тайминга
         ws[f"C{current_row}"] = row["dur"]
         ws[f"C{current_row}"].font = font_regular
         ws[f"C{current_row}"].alignment = align_center
+        ws[f"C{current_row}"].border = table_border
         
+        # Пустая разделяющая ячейка (тоже с рамкой, чтобы сохранялась целостность таблицы)
+        ws[f"D{current_row}"].border = table_border
+        
+        # Ячейка названия блока
         ws[f"E{current_row}"] = row["name"]
         ws[f"E{current_row}"].font = font_regular
         ws[f"E{current_row}"].alignment = align_left
+        ws[f"E{current_row}"].border = table_border
         
         current_row += 1
         
-    # Выставляем красивую ширину столбцов, чтобы текст не влезал на соседние ячейки
+    # Ширина колонок для идеального отображения без обрезки текста
     ws.column_dimensions['A'].width = 3
     ws.column_dimensions['B'].width = 3
-    ws.column_dimensions['C'].width = 16  # Для таймингов "00:06:15"
-    ws.column_dimensions['D'].width = 5   # Пустой разделитель
-    ws.column_dimensions['E'].width = 18  # Для названий "Реклама 6.1"
+    ws.column_dimensions['C'].width = 16  # Для "00:06:15"
+    ws.column_dimensions['D'].width = 5   # Пробел
+    ws.column_dimensions['E'].width = 18  # Для "Реклама 6.1"
     
-    # Сохраняем в байтовый поток
+    # Превращаем в байты для скачивания
     output = io.BytesIO()
     wb.save(output)
     return output.getvalue()
@@ -144,16 +159,14 @@ if uploaded_file:
     try:
         base_name = os.path.splitext(uploaded_file.name)[0]
         
-        # Пробуем автоматически достать дату из названия файла (например, "publicitate 17.05.2026")
-        # Если в названии есть дата, запишем её, иначе текущую дату на компьютере
+        # Парсинг даты из имени файла
         file_date = datetime.now().strftime("%Y-%m-%d")
         for part in base_name.split():
             if len(part) == 10 and part.count('.') == 2:
-                file_date = part  # Найдена дата формата ДД.ММ.ГГГГ
+                file_date = part
         
         df = pd.read_excel(uploaded_file, skiprows=6)
         
-        # Колонки: 2 (Время), 7 (Длительность), 9 (ID)
         df_res = df.iloc[:, [2, 7, 9]].copy()
         df_res.columns = ['Block_Time', 'Dur', 'ID']
         
@@ -212,7 +225,7 @@ if uploaded_file:
                 
                 zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
 
-        st.success(f"✅ Успешно обработано! Файлы готовы.")
+        st.success(f"✅ Успешно обработано!")
         
         col1, col2 = st.columns(2)
         with col1:
@@ -221,8 +234,7 @@ if uploaded_file:
         
         with col2:
             st.subheader("📊 Отчетность")
-            # Кнопка отчета в оригинальном стиле
-            st.download_button("📥 Визуальный Отчет Таймингов (.xlsx)", generate_exact_report(timing_rows_formatted, file_date), f"N4_Timings_{base_name}.xlsx")
+            st.download_button("📥 Визуальный Отчет Таймингов с границами (.xlsx)", generate_exact_report(timing_rows_formatted, file_date), f"N4_Timings_{base_name}.xlsx")
             st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_{base_name}.xlsx")
             st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
 
