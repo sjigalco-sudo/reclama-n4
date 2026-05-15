@@ -18,13 +18,14 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Blocks + IDs + Timings)")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (с автосохранением MP4)")
 
 # --- Константы N4 ---
 DEFAULT_REKLAMA_PATH = r"D:\AIR\REKLAMA 2026"
 DEFAULT_SOCIAL_PATH = r"D:\AIR\REKLAMA 2025"
 PUB_FILE = "PUBLICITATE_HD.mp4"
 PUB_DUR = 5.000
+DB_FILE = "mp4_database.txt"  # Файл для хранения ID на будущем
 
 SOCIAL_ADS = {
     1: {"file": "1_APA_HD.mpg", "dur": 10.440},
@@ -34,6 +35,27 @@ SOCIAL_ADS = {
     5: {"file": "5_SARE_HD.mpg", "dur": 10.440}
 }
 
+# --- Работа с базой данных MP4 ---
+def load_mp4_ids():
+    """Загружает сохраненные ID из файла"""
+    if os.path.exists(DB_FILE):
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            # Читаем, убираем пробелы и пустые строки
+            return sorted(list(set([line.strip() for line in f if line.strip()])))
+    return ["6856", "7142"]  # Дефолтные значения, если файла еще нет
+
+def save_mp4_ids(id_list):
+    """Сохраняет уникальные ID в файл"""
+    cleaned_ids = sorted(list(set([x.strip() for x in id_list if x.strip()])))
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        for x in cleaned_ids:
+            f.write(f"{x}\n")
+    return cleaned_ids
+
+# Инициализируем базу при первом запуске
+saved_mp4 = load_mp4_ids()
+
+# --- Вспомогательные функции ---
 def xml_escape(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
@@ -55,9 +77,24 @@ with st.sidebar:
     path_soc = st.text_input("Путь к отбивкам/соц:", value=DEFAULT_SOCIAL_PATH)
     
     st.divider()
-    st.header("🎥 Форматы")
-    mp4_ids_input = st.text_area("ID для MP4 (через запятую):", value="6856, 7142")
-    mp4_ids = [x.strip() for x in mp4_ids_input.split(",") if x.strip()]
+    st.header("🎥 База форматов MP4")
+    
+    # Поле ввода показывает всё, что сохранено на данный момент
+    current_input = st.text_area(
+        "ID для MP4 (через запятую):", 
+        value=", ".join(saved_mp4),
+        help="Добавьте новые ID, и они автоматически сохранятся в базу навсегда."
+    )
+    
+    # Парсим текущий ввод пользователя
+    mp4_ids = [x.strip() for x in current_input.split(",") if x.strip()]
+    
+    # Если пользователь вписал что-то новое, чего не было в файле — обновляем файл базы
+    if sorted(mp4_ids) != sorted(saved_mp4):
+        saved_mp4 = save_mp4_ids(mp4_ids)
+        st.toast("💾 База MP4 успешно обновлена и сохранена!", icon="📥")
+
+    st.caption(f"Всего в базе сохранено: {len(saved_mp4)} шт.")
     
     st.divider()
     uploaded_file = st.file_uploader("Загрузите план (XLS, XLSX)", type=["xls", "xlsx"])
@@ -65,7 +102,7 @@ with st.sidebar:
     if path_ads.endswith('\\'): path_ads = path_ads[:-1]
     if path_soc.endswith('\\'): path_soc = path_soc[:-1]
 
-# --- Логика ---
+# --- Логика обработки медиа-плана ---
 if uploaded_file:
     try:
         base_name = os.path.splitext(uploaded_file.name)[0]
@@ -96,7 +133,7 @@ if uploaded_file:
                 soc_idx = ((i - 1) % 5) + 1
                 soc = SOCIAL_ADS[soc_idx]
                 
-                # Полная длительность (реклама + 20.440с заставок)
+                # Полная точная длительность (со всеми заставками)
                 total_block_dur = PUB_DUR + items['Dur'].sum() + PUB_DUR + soc['dur']
                 
                 # 1. Данные для Excel Таймингов
@@ -122,6 +159,7 @@ if uploaded_file:
                 
                 for _, row in items.iterrows():
                     id_clean = str(row['ID']).split(".")[0]
+                    # Сверяем с сохраненной базой данных ID
                     ext = ".mp4" if id_clean in mp4_ids else ".mov"
                     xml.append(f'      <item\r\n            file="{xml_escape(path_ads)}\\{id_clean}{ext}"\r\n            in="0.000"\r\n            dur="{float(row["Dur"]):.3f}"/>\r\n')
                 
@@ -131,7 +169,7 @@ if uploaded_file:
                 
                 zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
 
-        st.success(f"✅ Обработка завершена! Блоков: {len(timing_data)}")
+        st.success(f"✅ Обработка завершена! Сгенерировано блоков: {len(timing_data)}")
         
         col1, col2 = st.columns(2)
         with col1:
