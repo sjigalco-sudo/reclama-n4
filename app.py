@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР (Счетчик блоков)")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -158,6 +158,9 @@ if uploaded_file:
         
         grouped = df_res.groupby('Block_Time', sort=False)
         
+        # Получаем общее количество блоков заранее
+        total_blocks_count = len(grouped)
+        
         zip_buffer = io.BytesIO()
         txt_id_content = io.StringIO()
         xlsx_id_data = []
@@ -171,11 +174,9 @@ if uploaded_file:
                 
                 time_str = block_time.strftime('%H:%M:%S')
                 
-                # Заменяем 00 на 24 для отчета и для имени файла
                 report_hour = 24 if h == 0 else h
                 report_block_name = f"Реклама {report_hour}.{hour_counts[h]}"
                 
-                # Используем report_hour с ведущим нулем, чтобы имена файлов были "24-1.slblock"
                 file_name = f"{report_hour:02d}-{hour_counts[h]}"
                 
                 if h == 0:
@@ -217,18 +218,19 @@ if uploaded_file:
                 
                 zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
 
-        st.success(f"✅ Успешно обработано! ")
+        # Динамический вывод количества блоков в плашку успешного выполнения
+        st.success(f"✅ Успешно обработано! Создано рекламных блоков: **{total_blocks_count}**.")
         
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("🚀 Эфирные файлы")
-            st.download_button(f"📥 SLBlocks ({base_name}).zip", zip_buffer.getvalue(), f"N4_Blocks_{base_name}.zip")
+            st.download_button(f"📥 Blocks ({base_name}).zip", zip_buffer.getvalue(), f"Blocks_{base_name}.zip")
         
         with col2:
             st.subheader("📊 Отчетность")
-            st.download_button("📥 Отчет Таймингов (.xlsx)", generate_exact_report(timing_rows_formatted, file_date), f"N4_Timings_{base_name}.xlsx")
-            st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"N4_IDs_{base_name}.xlsx")
-            st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"N4_IDs_{base_name}.txt")
+            st.download_button("📥 Отчет Таймингов (.xlsx)", generate_exact_report(timing_rows_formatted, file_date), f"Timings_{base_name}.xlsx")
+            st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"IDs_{base_name}.xlsx")
+            st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"IDs_{base_name}.txt")
 
     except Exception as e:
         st.error(f"Ошибка: {e}")
