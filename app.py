@@ -13,13 +13,12 @@ st.markdown('''<style>.stButton>button, .stDownloadButton>button { width: 100%; 
 
 st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР")
 
-# Константы
+# Константы и функции БД
 DB_FILE = "mp4_database.txt"
 PUB_FILE = "PUBLICITATE_HD.mp4"
 PUB_DUR = 5.000
 SOCIAL_ADS = {1: {"file": "1_APA_HD.mpg", "dur": 10.440}, 2: {"file": "2_FRUCTE_HD.mpg", "dur": 10.440}, 3: {"file": "3_MESE HD.mpg", "dur": 10.440}, 4: {"file": "4_MISCARE_HD.mpg", "dur": 10.440}, 5: {"file": "5_SARE_HD.mpg", "dur": 10.440}}
 
-# Функции БД
 def load_mp4_ids():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, "r", encoding="utf-8") as f: return sorted(list(set([line.strip() for line in f if line.strip()])))
@@ -31,15 +30,10 @@ def save_mp4_ids(id_list):
         for x in cleaned: f.write(f"{x}\n")
     return cleaned
 
-saved_mp4 = load_mp4_ids()
-
-# Excel отчет
+# Excel отчет таймингов
 def generate_exact_report(timing_rows, file_date):
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Лист1"
+    wb = openpyxl.Workbook(); ws = wb.active
     ws.views.sheetView[0].showGridLines = False 
-    
     f_reg, f_bold = Font(name="Calibri", size=11), Font(name="Calibri", size=11, bold=True)
     align_c, align_l = Alignment(horizontal="center", vertical="center"), Alignment(horizontal="left", vertical="center", indent=1.0)
     fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
@@ -61,11 +55,13 @@ def generate_exact_report(timing_rows, file_date):
 # Sidebar
 with st.sidebar:
     path_air = st.text_input("Путь к файлам:", value=r"D:\AIR\REKLAMA 2026")
+    saved_mp4 = load_mp4_ids()
     current_input = st.text_area("ID для MP4:", value=", ".join(saved_mp4))
-    if st.button("Сохранить ID"): saved_mp4 = save_mp4_ids([x.strip() for x in current_input.split(",") if x.strip()])
+    new_ids = [x.strip() for x in current_input.split(",") if x.strip()]
+    if new_ids != saved_mp4: saved_mp4 = save_mp4_ids(new_ids)
     uploaded_file = st.file_uploader("Загрузите медиаплан", type=["xls", "xlsx"])
 
-# Основная логика
+# Логика
 if uploaded_file:
     df = pd.read_excel(uploaded_file, skiprows=6)
     df_res = df.iloc[:, [2, 7, 9]].copy()
@@ -73,7 +69,7 @@ if uploaded_file:
     df_res['Block_Time'] = pd.to_datetime(df_res['Block_Time'], format='%H:%M:%S', errors='coerce').dt.time.ffill()
     grouped = df_res.groupby('Block_Time', sort=False)
     
-    zip_buffer, txt_buffer, xlsx_data, timing_rows = io.BytesIO(), io.StringIO(), [], []
+    zip_buffer, txt_buffer, xlsx_id_list, timing_rows = io.BytesIO(), io.StringIO(), [], []
     with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
         for i, (bt, items) in enumerate(grouped, 1):
             h = bt.hour; report_hour = 24 if h == 0 else h
@@ -86,11 +82,14 @@ if uploaded_file:
                 xml.append(f'<item file="{path_air}\\{PUB_FILE}" dur="{PUB_DUR:.3f}"/>\n<item file="{path_air}\\{SOCIAL_ADS[((i-1)%5)+1]["file"]}" dur="{SOCIAL_ADS[((i-1)%5)+1]["dur"]:.3f}"/>\n</slblock>')
                 zip_file.writestr(f"{report_hour:02d}-{i}.slblock", "".join(xml).encode('utf-16le'))
                 timing_rows.append({"dur": f"{int(total_dur)//3600:02d}:{int(total_dur)%3600//60:02d}:{int(total_dur)%60:02d}", "name": name})
+                id_str = "".join([f'"{str(r['ID']).split('.')[0]}"' for _, r in valid.iterrows()])
             else:
-                timing_rows.append({"dur": "00:00:00", "name": name})
-            txt_buffer.write(f"{time_s}\n{''.join([f'\"{str(r['ID']).split('.')[0]}\"' for _, r in valid.iterrows()])}\n\n")
+                timing_rows.append({"dur": "00:00:00", "name": name}); id_str = ""
+            txt_buffer.write(f"{time_s}\n{id_str}\n\n"); xlsx_id_list.append({"Время": time_s, "Список ID": id_str})
 
     st.success("✅ Готово!")
-    c1, c2 = st.columns(2)
-    with c1: st.download_button("📥 Скачать блоки", zip_buffer.getvalue(), f"Blocks_{uploaded_file.name}.zip")
-    with c2: st.download_button("📥 Отчет Excel", generate_exact_report(timing_rows, datetime.now().strftime("%d.%m.%Y")), f"Timings_{uploaded_file.name}.xlsx")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: st.download_button("📥 Блоки (.zip)", zip_buffer.getvalue(), f"Blocks_{uploaded_file.name}.zip")
+    with c2: st.download_button("📥 Отчет таймингов", generate_exact_report(timing_rows, datetime.now().strftime("%d.%m.%Y")), f"Timings_{uploaded_file.name}.xlsx")
+    with c3: st.download_button("📥 Список ID (.xlsx)", pd.DataFrame(xlsx_id_list).to_excel(index=False) or b"", f"IDs_{uploaded_file.name}.xlsx")
+    with c4: st.download_button("📥 Список ID (.txt)", txt_buffer.getvalue(), f"IDs_{uploaded_file.name}.txt")
