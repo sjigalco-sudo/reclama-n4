@@ -66,7 +66,7 @@ def xml_escape(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 def seconds_to_hms_custom(total_seconds):
-    """Преобразует секунды в формат Ч:ММ:СС (без ведущего нуля для часов)"""
+    """Преобразует секунды в строгий формат ЧЧ:ММ:СС (с ведущими нулями)"""
     total_secs = int(round(total_seconds))
     h = total_secs // 3600
     m = (total_secs % 3600) // 60
@@ -74,11 +74,9 @@ def seconds_to_hms_custom(total_seconds):
     return f"{h:02d}:{m:02d}:{s:02d}"
 
 def generate_exact_report(timing_rows, file_date):
-    """Создает Excel-файл с точным воссозданием разметки, шрифтов и обрамления таблиц"""
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Лист1"
-    
     ws.views.sheetView[0].showGridLines = True
     
     font_regular = Font(name="Calibri", size=11)
@@ -141,24 +139,19 @@ def to_excel(df):
 if uploaded_file:
     try:
         base_name = os.path.splitext(uploaded_file.name)[0]
-        
         file_date = datetime.now().strftime("%Y-%m-%d")
         for part in base_name.split():
             if len(part) == 10 and part.count('.') == 2:
                 file_date = part
         
         df = pd.read_excel(uploaded_file, skiprows=6)
-        
         df_res = df.iloc[:, [2, 7, 9]].copy()
         df_res.columns = ['Block_Time', 'Dur', 'ID']
         
         df_res['Block_Time'] = pd.to_datetime(df_res['Block_Time'], format='%H:%M:%S', errors='coerce').dt.time
         df_res['Block_Time'] = df_res['Block_Time'].ffill()
-        df_res = df_res.dropna(subset=['ID'])
         
         grouped = df_res.groupby('Block_Time', sort=False)
-        
-        # Получаем общее количество блоков заранее
         total_blocks_count = len(grouped)
         
         zip_buffer = io.BytesIO()
@@ -172,53 +165,43 @@ if uploaded_file:
                 h = block_time.hour
                 hour_counts[h] = hour_counts.get(h, 0) + 1
                 
-                time_str = block_time.strftime('%H:%M:%S')
-                
                 report_hour = 24 if h == 0 else h
                 report_block_name = f"Реклама {report_hour}.{hour_counts[h]}"
-                
                 file_name = f"{report_hour:02d}-{hour_counts[h]}"
+                display_time_str = f"{report_hour}:{block_time.strftime('%M:%S')}"
                 
-                if h == 0:
-                    display_time_str = f"24:{block_time.strftime('%M:%S')}"
+                # Проверяем, есть ли валидные ID в блоке
+                valid_items = items.dropna(subset=['ID'])
+                
+                if not valid_items.empty:
+                    pure_ads_seconds = valid_items['Dur'].sum()
+                    soc = SOCIAL_ADS[((i - 1) % 5) + 1]
+                    total_block_dur = PUB_DUR + pure_ads_seconds + PUB_DUR + soc['dur']
+                    
+                    xml = [
+                        f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Sec="{total_block_dur:.3f}">\r\n',
+                        '      version 3\r\n',
+                        f'      <item file="{xml_escape(path_air)}\\{PUB_FILE}" dur="{PUB_DUR:.3f}"/>\r\n'
+                    ]
+                    for _, row in valid_items.iterrows():
+                        id_clean = str(row['ID']).split(".")[0]
+                        ext = ".mp4" if id_clean in mp4_ids else ".mov"
+                        xml.append(f'      <item file="{xml_escape(path_air)}\\{id_clean}{ext}" dur="{float(row["Dur"]):.3f}"/>\r\n')
+                    
+                    xml.append(f'      <item file="{xml_escape(path_air)}\\{PUB_FILE}" dur="{PUB_DUR:.3f}"/>\r\n')
+                    xml.append(f'      <item file="{xml_escape(path_air)}\\{soc["file"]}" dur="{soc["dur"]:.3f}"/>\r\n</slblock>')
+                    
+                    zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
+                    dur_str = seconds_to_hms_custom(total_block_dur)
+                    id_list_str = "".join([f'"{str(row["ID"]).split(".")[0]}"' for _, row in valid_items.iterrows()])
                 else:
-                    display_time_str = f"{h}:{block_time.strftime('%M:%S')}"
+                    dur_str = "00:00:00"
+                    id_list_str = ""
                 
-                soc = SOCIAL_ADS[((i - 1) % 5) + 1]
-                
-                pure_ads_seconds = items['Dur'].sum()
-                total_block_dur = PUB_DUR + pure_ads_seconds + PUB_DUR + soc['dur']
-                
-                timing_rows_formatted.append({
-                    "dur": seconds_to_hms_custom(total_block_dur),
-                    "name": report_block_name
-                })
-
-                id_list_raw = [str(row['ID']).split(".")[0] for _, row in items.iterrows()]
-                id_list_str = "".join([f'"{x}"' for x in id_list_raw])
-                
+                timing_rows_formatted.append({"dur": dur_str, "name": report_block_name})
                 txt_id_content.write(f"{display_time_str}\n{id_list_str}\n\n")
                 xlsx_id_data.append({"Время": display_time_str, "Список ID": id_list_str})
 
-                # XML SLBlock
-                xml = [
-                    f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Image_using_type="Video files"\r\n      Sec="{total_block_dur:.3f}"\r\n      Include_subfolders="no"\r\n      Path=""\r\n      cptn_start_file=""\r\n      cptn_end_file=""\r\n      cptn_between_file=""\r\n      cptn_start_en="no"\r\n      cptn_end_en="no"\r\n      cptn_between_en="no"\r\n      Image_Duration="1.000">\r\n',
-                    '      version 3\r\n',
-                    f'      <item\r\n            file="{xml_escape(path_air)}\\{PUB_FILE}"\r\n            in="0.000"\r\n            dur="{PUB_DUR:.3f}"/>\r\n'
-                ]
-                
-                for _, row in items.iterrows():
-                    id_clean = str(row['ID']).split(".")[0]
-                    ext = ".mp4" if id_clean in mp4_ids else ".mov"
-                    xml.append(f'      <item\r\n            file="{xml_escape(path_air)}\\{id_clean}{ext}"\r\n            in="0.000"\r\n            dur="{float(row["Dur"]):.3f}"/>\r\n')
-                
-                xml.append(f'      <item\r\n            file="{xml_escape(path_air)}\\{PUB_FILE}"\r\n            in="0.000"\r\n            dur="{PUB_DUR:.3f}"/>\r\n')
-                xml.append(f'      <item\r\n            file="{xml_escape(path_air)}\\{soc["file"]}"\r\n            in="0.000"\r\n            dur="{soc["dur"]:.3f}"/>\r\n')
-                xml.append('</slblock>')
-                
-                zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
-
-        # Динамический вывод количества блоков в плашку успешного выполнения
         st.success(f"✅ Успешно обработано! Создано рекламных блоков: **{total_blocks_count}**.")
         
         col1, col2 = st.columns(2)
