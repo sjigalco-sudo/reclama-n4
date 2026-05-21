@@ -5,7 +5,7 @@ import zipfile
 import os
 from datetime import datetime
 import openpyxl
-from openpyxl.styles import Font, Alignment, Border, Side
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
 # Конфигурация страницы
 st.set_page_config(page_title="N4 | Full Generator", page_icon="📺", layout="wide")
@@ -18,7 +18,7 @@ st.markdown('''
     </style>
     ''', unsafe_allow_html=True)
 
-st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР ")
+st.title("📺 N4: ПОЛНЫЙ ГЕНЕРАТОР")
 
 # --- Константы и База Данных ---
 DB_FILE = "mp4_database.txt"
@@ -46,27 +46,11 @@ def save_mp4_ids(id_list):
 
 saved_mp4 = load_mp4_ids()
 
-# --- Sidebar ---
-with st.sidebar:
-    st.header("⚙️ Настройки")
-    path_air = st.text_input("Путь к файлам (Реклама и Заставки):", value=r"D:\AIR\REKLAMA 2026")
-    
-    st.divider()
-    current_input = st.text_area("ID для MP4 (через запятую):", value=", ".join(saved_mp4))
-    mp4_ids = [x.strip() for x in current_input.split(",") if x.strip()]
-    if sorted(mp4_ids) != sorted(saved_mp4):
-        saved_mp4 = save_mp4_ids(mp4_ids)
-        st.toast("💾 База MP4 сохранена!")
-
-    st.divider()
-    uploaded_file = st.file_uploader("Загрузите медиаплан", type=["xls", "xlsx"])
-
 # --- Вспомогательные функции ---
 def xml_escape(text):
     return str(text).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
 def seconds_to_hms_custom(total_seconds):
-    """Преобразует секунды в строгий формат ЧЧ:ММ:СС (с ведущими нулями)"""
     total_secs = int(round(total_seconds))
     h = total_secs // 3600
     m = (total_secs % 3600) // 60
@@ -77,53 +61,53 @@ def generate_exact_report(timing_rows, file_date):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Лист1"
-    ws.views.sheetView[0].showGridLines = True
+    ws.views.sheetView[0].showGridLines = False 
     
     font_regular = Font(name="Calibri", size=11)
     font_bold = Font(name="Calibri", size=11, bold=True)
     align_center = Alignment(horizontal="center", vertical="center")
-    align_left = Alignment(horizontal="left", vertical="center")
+    align_left = Alignment(horizontal="left", vertical="center", indent=1.0)
     
+    blue_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
     thin_side = Side(border_style="thin", color="000000")
-    table_border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
+    border = Border(left=thin_side, right=thin_side, top=thin_side, bottom=thin_side)
     
-    ws["E1"] = file_date
-    ws["E1"].font = font_regular
-    ws["E2"] = "N4"
-    ws["E2"].font = font_bold
-    ws["D6"] = "Длительность рекламных блоков"
-    ws["D6"].font = font_bold
+    ws["E5"] = file_date
+    ws["E6"] = "N4"
+    ws["E5"].font = font_regular
+    ws["E6"].font = font_bold
     
-    ws["C7"] = "Длина ролика"
+    ws.merge_cells("C7:E7")
+    ws["C7"] = "Длительность рекламных блоков"
     ws["C7"].font = font_bold
     ws["C7"].alignment = align_center
-    ws["C7"].border = table_border
+    ws["C7"].border = border
     
-    ws["E7"] = "Название блока"
-    ws["E7"].font = font_bold
-    ws["E7"].alignment = align_center
-    ws["E7"].border = table_border
-    ws["D7"].border = table_border 
+    ws["C8"] = "Длина ролика"
+    ws["D8"] = "" 
+    ws["E8"] = "Название блока"
     
-    current_row = 9
-    for row in timing_rows:
-        ws[f"C{current_row}"] = row["dur"]
-        ws[f"C{current_row}"].font = font_regular
-        ws[f"C{current_row}"].alignment = align_center
-        ws[f"C{current_row}"].border = table_border
-        ws[f"D{current_row}"].border = table_border
+    for cell in ["C8", "D8", "E8"]:
+        ws[cell].font = font_bold
+        ws[cell].alignment = align_center
+        ws[cell].border = border
+        ws[cell].fill = blue_fill
         
-        ws[f"E{current_row}"] = row["name"]
-        ws[f"E{current_row}"].font = font_regular
-        ws[f"E{current_row}"].alignment = align_left
-        ws[f"E{current_row}"].border = table_border
-        current_row += 1
+    for idx, row in enumerate(timing_rows, start=9):
+        ws.row_dimensions[idx].height = 15.0
+        ws[f"C{idx}"] = row["dur"]
+        ws[f"C{idx}"].font = font_regular
+        ws[f"C{idx}"].alignment = align_center
+        ws[f"C{idx}"].border = border
+        ws[f"D{idx}"].border = border
+        ws[f"E{idx}"] = row["name"]
+        ws[f"E{idx}"].font = font_regular
+        ws[f"E{idx}"].alignment = align_left
+        ws[f"E{idx}"].border = border
         
-    ws.column_dimensions['A'].width = 3
-    ws.column_dimensions['B'].width = 3
-    ws.column_dimensions['C'].width = 16
-    ws.column_dimensions['D'].width = 5
-    ws.column_dimensions['E'].width = 18
+    ws.column_dimensions['C'].width = 14.5
+    ws.column_dimensions['D'].width = 2.5
+    ws.column_dimensions['E'].width = 21.0
     
     output = io.BytesIO()
     wb.save(output)
@@ -135,24 +119,28 @@ def to_excel(df):
         df.to_excel(writer, index=False)
     return output.getvalue()
 
+# --- UI ---
+with st.sidebar:
+    st.header("⚙️ Настройки")
+    path_air = st.text_input("Путь к файлам:", value=r"D:\AIR\REKLAMA 2026")
+    current_input = st.text_area("ID для MP4:", value=", ".join(saved_mp4))
+    if st.button("Сохранить ID"):
+        saved_mp4 = save_mp4_ids([x.strip() for x in current_input.split(",") if x.strip()])
+        st.toast("💾 База обновлена!")
+    uploaded_file = st.file_uploader("Загрузите медиаплан", type=["xls", "xlsx"])
+
 # --- Логика ---
 if uploaded_file:
     try:
         base_name = os.path.splitext(uploaded_file.name)[0]
-        file_date = datetime.now().strftime("%Y-%m-%d")
-        for part in base_name.split():
-            if len(part) == 10 and part.count('.') == 2:
-                file_date = part
+        file_date = next((p for p in base_name.split() if len(p) == 10 and p.count('.') == 2), datetime.now().strftime("%Y-%m-%d"))
         
         df = pd.read_excel(uploaded_file, skiprows=6)
         df_res = df.iloc[:, [2, 7, 9]].copy()
         df_res.columns = ['Block_Time', 'Dur', 'ID']
-        
-        df_res['Block_Time'] = pd.to_datetime(df_res['Block_Time'], format='%H:%M:%S', errors='coerce').dt.time
-        df_res['Block_Time'] = df_res['Block_Time'].ffill()
+        df_res['Block_Time'] = pd.to_datetime(df_res['Block_Time'], format='%H:%M:%S', errors='coerce').dt.time.ffill()
         
         grouped = df_res.groupby('Block_Time', sort=False)
-        total_blocks_count = len(grouped)
         
         zip_buffer = io.BytesIO()
         txt_id_content = io.StringIO()
@@ -168,52 +156,35 @@ if uploaded_file:
                 report_hour = 24 if h == 0 else h
                 report_block_name = f"Реклама {report_hour}.{hour_counts[h]}"
                 file_name = f"{report_hour:02d}-{hour_counts[h]}"
-                display_time_str = f"{report_hour}:{block_time.strftime('%M:%S')}"
+                display_time = f"{report_hour}:{block_time.strftime('%M:%S')}"
                 
-                # Проверяем, есть ли валидные ID в блоке
                 valid_items = items.dropna(subset=['ID'])
                 
                 if not valid_items.empty:
-                    pure_ads_seconds = valid_items['Dur'].sum()
+                    pure_ads = valid_items['Dur'].sum()
                     soc = SOCIAL_ADS[((i - 1) % 5) + 1]
-                    total_block_dur = PUB_DUR + pure_ads_seconds + PUB_DUR + soc['dur']
+                    total_dur = PUB_DUR + pure_ads + PUB_DUR + soc['dur']
                     
-                    xml = [
-                        f'<slblock\r\n      Source="list"\r\n      Type="accurate"\r\n      Sec="{total_block_dur:.3f}">\r\n',
-                        '      version 3\r\n',
-                        f'      <item file="{xml_escape(path_air)}\\{PUB_FILE}" dur="{PUB_DUR:.3f}"/>\r\n'
-                    ]
+                    xml = [f'<slblock Source="list" Type="accurate" Sec="{total_dur:.3f}">\nversion 3\n', 
+                           f'<item file="{xml_escape(path_air)}\\{PUB_FILE}" dur="{PUB_DUR:.3f}"/>\n']
                     for _, row in valid_items.iterrows():
-                        id_clean = str(row['ID']).split(".")[0]
-                        ext = ".mp4" if id_clean in mp4_ids else ".mov"
-                        xml.append(f'      <item file="{xml_escape(path_air)}\\{id_clean}{ext}" dur="{float(row["Dur"]):.3f}"/>\r\n')
+                        ext = ".mp4" if str(row['ID']).split(".")[0] in saved_mp4 else ".mov"
+                        xml.append(f'<item file="{xml_escape(path_air)}\\{str(row["ID"]).split(".")[0]}{ext}" dur="{float(row["Dur"]):.3f}"/>\n')
+                    xml.append(f'<item file="{xml_escape(path_air)}\\{PUB_FILE}" dur="{PUB_DUR:.3f}"/>\n')
+                    xml.append(f'<item file="{xml_escape(path_air)}\\{soc["file"]}" dur="{soc["dur"]:.3f}"/>\n</slblock>')
                     
-                    xml.append(f'      <item file="{xml_escape(path_air)}\\{PUB_FILE}" dur="{PUB_DUR:.3f}"/>\r\n')
-                    xml.append(f'      <item file="{xml_escape(path_air)}\\{soc["file"]}" dur="{soc["dur"]:.3f}"/>\r\n</slblock>')
-                    
-                    zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16'))
-                    dur_str = seconds_to_hms_custom(total_block_dur)
-                    id_list_str = "".join([f'"{str(row["ID"]).split(".")[0]}"' for _, row in valid_items.iterrows()])
+                    zip_file.writestr(f"{file_name}.slblock", "".join(xml).encode('utf-16le'))
+                    dur_str = seconds_to_hms_custom(total_dur)
+                    id_str = "".join([f'"{str(row["ID"]).split(".")[0]}"' for _, row in valid_items.iterrows()])
                 else:
-                    dur_str = "00:00:00"
-                    id_list_str = ""
+                    dur_str, id_str = "00:00:00", ""
                 
                 timing_rows_formatted.append({"dur": dur_str, "name": report_block_name})
-                txt_id_content.write(f"{display_time_str}\n{id_list_str}\n\n")
-                xlsx_id_data.append({"Время": display_time_str, "Список ID": id_list_str})
+                txt_id_content.write(f"{display_time}\n{id_str}\n\n")
+                xlsx_id_data.append({"Время": display_time, "Список ID": id_str})
 
-        st.success(f"✅ Успешно обработано! Создано рекламных блоков: **{total_blocks_count}**.")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("🚀 Эфирные файлы")
-            st.download_button(f"📥 Blocks ({base_name}).zip", zip_buffer.getvalue(), f"Blocks_{base_name}.zip")
-        
-        with col2:
-            st.subheader("📊 Отчетность")
-            st.download_button("📥 Отчет Таймингов (.xlsx)", generate_exact_report(timing_rows_formatted, file_date), f"Timings_{base_name}.xlsx")
-            st.download_button("📥 Список ID (.xlsx)", to_excel(pd.DataFrame(xlsx_id_data)), f"IDs_{base_name}.xlsx")
-            st.download_button("📥 Список ID (.txt)", txt_id_content.getvalue(), f"IDs_{base_name}.txt")
-
+        st.success("✅ Готово!")
+        st.download_button("📥 Скачать блоки", zip_buffer.getvalue(), f"Blocks_{base_name}.zip")
+        st.download_button("📥 Скачать отчет (Excel)", generate_exact_report(timing_rows_formatted, file_date), f"Timings_{base_name}.xlsx")
     except Exception as e:
         st.error(f"Ошибка: {e}")
