@@ -89,12 +89,14 @@ if uploaded_file:
 
     st.success("✅ Готово!")
     
-    # Исправление ошибки с Excel
     xlsx_id_buffer = io.BytesIO()
     pd.DataFrame(xlsx_id_list).to_excel(xlsx_id_buffer, index=False)
     
-    c1, c2, c3, c4 = st.columns(4)
-    with c1: st.download_button("📥 Блоки (.zip)", zip_buffer.getvalue(), f"Blocks_{uploaded_file.name}.zip")
-    with c2: st.download_button("📥 Отчет таймингов", generate_exact_report(timing_rows, datetime.now().strftime("%d.%m.%Y")), f"Timings_{uploaded_file.name}.xlsx")
-    with c3: st.download_button("📥 Список ID (.xlsx)", xlsx_id_buffer.getvalue(), f"IDs_{uploaded_file.name}.xlsx")
-    with c4: st.download_button("📥 Список ID (.txt)", txt_buffer.getvalue(), f"IDs_{uploaded_file.name}.txt")
+    # Новый дизайн кнопок
+    left_col, right_col = st.columns([1, 1])
+    with left_col:
+        st.download_button("📥 СКАЧАТЬ АРХИВ БЛОКОВ (.zip)", zip_buffer.getvalue(), f"Blocks_{uploaded_file.name}.zip")
+    with right_col:
+        st.download_button("📥 Отчет: Тайминги (.xlsx)", generate_exact_report(timing_rows, datetime.now().strftime("%d.%m.%Y")), f"Timings_{uploaded_file.name}.xlsx")
+        st.download_button("📥 Отчет: Список ID (.xlsx)", xlsx_id_buffer.getvalue(), f"IDs_{uploaded_file.name}.xlsx")
+        st.download_button("📥 Отчет: Список ID (.txt)", txt_buffer.getvalue(), f"IDs_{uploaded_file.name}.txt")
