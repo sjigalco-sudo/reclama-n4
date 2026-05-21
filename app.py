@@ -31,7 +31,7 @@ def save_mp4_ids(id_list):
         for x in cleaned: f.write(f"{x}\n")
     return cleaned
 
-# Функция отчета с точными размерами и сплошными границами
+# Функция отчета
 def generate_exact_report(timing_rows, file_date):
     wb = openpyxl.Workbook(); ws = wb.active
     f_reg, f_bold = Font(name="Calibri", size=11), Font(name="Calibri", size=11, bold=True)
@@ -40,7 +40,6 @@ def generate_exact_report(timing_rows, file_date):
     thin = Side(border_style="thin", color="000000")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
     
-    # Размеры
     ws.column_dimensions['A'].width = 8.09
     ws.column_dimensions['B'].width = 8.09
     ws.column_dimensions['C'].width = 8.09
@@ -52,13 +51,11 @@ def generate_exact_report(timing_rows, file_date):
     ws["C6"].font, ws["C6"].alignment = f_bold, align_c
     for col in ["C", "D", "E"]: ws[f"{col}6"].border = border
 
-    # Шапка
     for col, val in [("C", "Длина ролика"), ("D", ""), ("E", "Название блока")]:
         cell = ws[f"{col}8"]
         cell.value = val
         cell.font, cell.alignment, cell.border, cell.fill = f_bold, align_c, border, fill
         
-    # Данные
     for idx, row in enumerate(timing_rows, start=9):
         ws.row_dimensions[idx].height = 15.0
         for col in ["C", "D", "E"]:
@@ -66,7 +63,7 @@ def generate_exact_report(timing_rows, file_date):
             cell.border = border
             if col == "C": cell.value = row["dur"]; cell.alignment = align_c
             elif col == "E": cell.value = row["name"]; cell.alignment = align_l
-            elif col == "D": cell.value = "" # Принудительно пустая ячейка с рамкой
+            elif col == "D": cell.value = ""
             
     out = io.BytesIO(); wb.save(out); return out.getvalue()
 
@@ -82,4 +79,17 @@ with st.sidebar:
 # Логика
 if uploaded_file:
     df = pd.read_excel(uploaded_file, skiprows=6)
-    df_res = df.iloc[:, [2, 7, 9]].copy
+    df_res = df.iloc[:, [2, 7, 9]].copy()
+    df_res.columns = ['Block_Time', 'Dur', 'ID']
+    df_res['Block_Time'] = pd.to_datetime(df_res['Block_Time'], format='%H:%M:%S', errors='coerce').dt.time.ffill()
+    grouped = df_res.groupby('Block_Time', sort=False)
+    
+    zip_buffer, txt_buffer, xlsx_id_list, timing_rows = io.BytesIO(), io.StringIO(), [], []
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        for i, (bt, items) in enumerate(grouped, 1):
+            h = bt.hour; report_hour = 24 if h == 0 else h
+            name = f"Реклама {report_hour}.{i}"; time_s = f"{report_hour}:{bt.strftime('%M:%S')}"
+            valid = items.dropna(subset=['ID'])
+            if not valid.empty:
+                total_dur = PUB_DUR * 2 + valid['Dur'].sum() + SOCIAL_ADS[((i-1)%5)+1]['dur']
+                xml = [f'<slblock Source="list" Type="accurate" Sec="{total_dur:.3f}">\nversion 3\n', f'<item file="{path_air}\\{PUB_FILE}" dur="{PUB_DUR
