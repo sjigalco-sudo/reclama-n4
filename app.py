@@ -71,7 +71,7 @@ def seconds_to_hms_custom(total_seconds):
     h = total_secs // 3600
     m = (total_secs % 3600) // 60
     s = total_secs % 60
-    return f"{h}:{m:02d}:{s:02d}"
+    return f"{h:02d}:{m:02d}:{s:02d}"
 
 def generate_exact_report(timing_rows, file_date):
     """Создает Excel-файл с точным воссозданием разметки, шрифтов и обрамления таблиц"""
