@@ -7,7 +7,7 @@ from datetime import datetime
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
-# Конфигурация
+# Конфигурация страницы
 st.set_page_config(page_title="N4 | Generator", page_icon="📺", layout="wide")
 st.markdown('''<style>.stButton>button, .stDownloadButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #2563EB; color: white; border: none; }</style>''', unsafe_allow_html=True)
 
@@ -30,7 +30,7 @@ def save_mp4_ids(id_list):
         for x in cleaned: f.write(f"{x}\n")
     return cleaned
 
-# Excel отчет таймингов
+# Функция генерации Excel
 def generate_exact_report(timing_rows, file_date):
     wb = openpyxl.Workbook(); ws = wb.active
     ws.views.sheetView[0].showGridLines = False 
@@ -61,7 +61,7 @@ with st.sidebar:
     if new_ids != saved_mp4: saved_mp4 = save_mp4_ids(new_ids)
     uploaded_file = st.file_uploader("Загрузите медиаплан", type=["xls", "xlsx"])
 
-# Логика
+# Основная логика
 if uploaded_file:
     df = pd.read_excel(uploaded_file, skiprows=6)
     df_res = df.iloc[:, [2, 7, 9]].copy()
@@ -88,8 +88,13 @@ if uploaded_file:
             txt_buffer.write(f"{time_s}\n{id_str}\n\n"); xlsx_id_list.append({"Время": time_s, "Список ID": id_str})
 
     st.success("✅ Готово!")
+    
+    # Исправление ошибки с Excel
+    xlsx_id_buffer = io.BytesIO()
+    pd.DataFrame(xlsx_id_list).to_excel(xlsx_id_buffer, index=False)
+    
     c1, c2, c3, c4 = st.columns(4)
     with c1: st.download_button("📥 Блоки (.zip)", zip_buffer.getvalue(), f"Blocks_{uploaded_file.name}.zip")
     with c2: st.download_button("📥 Отчет таймингов", generate_exact_report(timing_rows, datetime.now().strftime("%d.%m.%Y")), f"Timings_{uploaded_file.name}.xlsx")
-    with c3: st.download_button("📥 Список ID (.xlsx)", pd.DataFrame(xlsx_id_list).to_excel(index=False) or b"", f"IDs_{uploaded_file.name}.xlsx")
+    with c3: st.download_button("📥 Список ID (.xlsx)", xlsx_id_buffer.getvalue(), f"IDs_{uploaded_file.name}.xlsx")
     with c4: st.download_button("📥 Список ID (.txt)", txt_buffer.getvalue(), f"IDs_{uploaded_file.name}.txt")
