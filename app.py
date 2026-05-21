@@ -31,7 +31,7 @@ def save_mp4_ids(id_list):
         for x in cleaned: f.write(f"{x}\n")
     return cleaned
 
-# Исправленная функция отчета
+# Функция отчета с точными размерами и сплошными границами
 def generate_exact_report(timing_rows, file_date):
     wb = openpyxl.Workbook(); ws = wb.active
     f_reg, f_bold = Font(name="Calibri", size=11), Font(name="Calibri", size=11, bold=True)
@@ -66,6 +66,7 @@ def generate_exact_report(timing_rows, file_date):
             cell.border = border
             if col == "C": cell.value = row["dur"]; cell.alignment = align_c
             elif col == "E": cell.value = row["name"]; cell.alignment = align_l
+            elif col == "D": cell.value = "" # Принудительно пустая ячейка с рамкой
             
     out = io.BytesIO(); wb.save(out); return out.getvalue()
 
@@ -81,37 +82,4 @@ with st.sidebar:
 # Логика
 if uploaded_file:
     df = pd.read_excel(uploaded_file, skiprows=6)
-    df_res = df.iloc[:, [2, 7, 9]].copy()
-    df_res.columns = ['Block_Time', 'Dur', 'ID']
-    df_res['Block_Time'] = pd.to_datetime(df_res['Block_Time'], format='%H:%M:%S', errors='coerce').dt.time.ffill()
-    grouped = df_res.groupby('Block_Time', sort=False)
-    
-    zip_buffer, txt_buffer, xlsx_id_list, timing_rows = io.BytesIO(), io.StringIO(), [], []
-    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-        for i, (bt, items) in enumerate(grouped, 1):
-            h = bt.hour; report_hour = 24 if h == 0 else h
-            name = f"Реклама {report_hour}.{i}"; time_s = f"{report_hour}:{bt.strftime('%M:%S')}"
-            valid = items.dropna(subset=['ID'])
-            if not valid.empty:
-                total_dur = PUB_DUR * 2 + valid['Dur'].sum() + SOCIAL_ADS[((i-1)%5)+1]['dur']
-                xml = [f'<slblock Source="list" Type="accurate" Sec="{total_dur:.3f}">\nversion 3\n', f'<item file="{path_air}\\{PUB_FILE}" dur="{PUB_DUR:.3f}"/>\n']
-                for _, r in valid.iterrows(): xml.append(f'<item file="{path_air}\\{str(r["ID"]).split(".")[0]}{".mp4" if str(r["ID"]).split(".")[0] in saved_mp4 else ".mov"}" dur="{float(r["Dur"]):.3f}"/>\n')
-                xml.append(f'<item file="{path_air}\\{PUB_FILE}" dur="{PUB_DUR:.3f}"/>\n<item file="{path_air}\\{SOCIAL_ADS[((i-1)%5)+1]["file"]}" dur="{SOCIAL_ADS[((i-1)%5)+1]["dur"]:.3f}"/>\n</slblock>')
-                zip_file.writestr(f"{report_hour:02d}-{i}.slblock", "".join(xml).encode('utf-16le'))
-                timing_rows.append({"dur": f"{int(total_dur)//3600:02d}:{int(total_dur)%3600//60:02d}:{int(total_dur)%60:02d}", "name": name})
-                id_str = "".join([f'"{str(r['ID']).split('.')[0]}"' for _, r in valid.iterrows()])
-            else:
-                timing_rows.append({"dur": "00:00:00", "name": name}); id_str = ""
-            txt_buffer.write(f"{time_s}\n{id_str}\n\n"); xlsx_id_list.append({"Время": time_s, "Список ID": id_str})
-
-    st.success("✅ Готово!")
-    xlsx_id_buffer = io.BytesIO()
-    pd.DataFrame(xlsx_id_list).to_excel(xlsx_id_buffer, index=False)
-    
-    col_l, col_r = st.columns([3, 1])
-    with col_l:
-        st.download_button("📥 СКАЧАТЬ АРХИВ БЛОКОВ (.zip)", zip_buffer.getvalue(), f"Blocks_{uploaded_file.name}.zip")
-    with col_r:
-        st.download_button("📥 Отчет: Тайминги (.xlsx)", generate_exact_report(timing_rows, datetime.now().strftime("%d.%m.%Y")), f"Timings_{uploaded_file.name}.xlsx")
-        st.download_button("📥 Отчет: Список ID (.xlsx)", xlsx_id_buffer.getvalue(), f"IDs_{uploaded_file.name}.xlsx")
-        st.download_button("📥 Отчет: Список ID (.txt)", txt_buffer.getvalue(), f"IDs_{uploaded_file.name}.txt")
+    df_res = df.iloc[:, [2, 7, 9]].copy
